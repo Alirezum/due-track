@@ -1,0 +1,801 @@
+openapi: 3.1.0
+info:
+  title: due-track API
+  version: 1.0.0
+  description: |
+    Local-first, single-user deadline and obligation tracker.
+
+    All routes are mounted under `/api`. The server binds to `127.0.0.1` by default
+    and has no authentication. The dashboard endpoint returns active items grouped
+    into exactly one status bucket, plus summary counts and the Upcoming amount total
+    for the filtered result set.
+
+    Categories are free-text labels stored on each item. Badge colors are derived
+    deterministically by the frontend; there is no categories table or category CRUD
+    endpoint in this two-table model.
+  termsOfService: http://127.0.0.1:8000/
+  contact:
+    name: due-track
+servers:
+  - url: http://127.0.0.1:8000
+    description: Local development and production server
+security: []
+tags:
+  - name: Items
+    description: Active item CRUD, dashboard grouping, filters, and completion.
+  - name: History
+    description: Completion audit trail, undo, and history deletion.
+
+paths:
+  /api/items:
+    get:
+      tags: [Items]
+      operationId: listItems
+      summary: List active items grouped by status bucket
+      description: |
+        Returns only `active` items. Every item appears in exactly one of `overdue`,
+        `due_today`, `upcoming`, or `later`. Buckets and the summary both reflect the
+        same filtered result set.
+
+        Bucket rules, with an explicit reference time and the application timezone:
+        - **Overdue**: `due_at_utc < reference_time`. Items due earlier today are Overdue.
+        - **Due Today**: local due date is today and the item is not Overdue. A timed item
+          due exactly at the reference time is Due Today. A date-only item remains Due
+          Today until the local day ends.
+        - **Upcoming**: local due date is tomorrow through today + 7 calendar days inclusive.
+        - **Later**: local due date is today + 8 calendar days or later.
+
+        Each bucket is sorted by due date ascending, then priority descending
+        (`critical` > `high` > `medium` > `low`), then title ascending
+        (case-insensitively). Filters combine with AND semantics.
+      parameters:
+        - name: category
+          in: query
+          required: false
+          description: Case-insensitive exact match on the item's free-text category label.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 50
+        - name: priority
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/Priority'
+        - name: recurring
+          in: query
+          required: false
+          description: |
+            `true` selects recurring items (`recurrence_freq != none`);
+            `false` selects one-time items (`recurrence_freq == none`).
+          schema:
+            type: boolean
+        - name: q
+          in: query
+          required: false
+          description: Case-insensitive substring search across title and notes.
+          schema:
+            type: string
+            maxLength: 200
+      responses:
+        '200':
+          description: Active items grouped by bucket, with summary data.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ItemListResponse'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+    post:
+      tags: [Items]
+      operationId: createItem
+      summary: Create an active due item
+      description: |
+        Creates one active item. The `due` input is either a date-only local date or
+        an aware datetime with an explicit offset. Date-only values are stored at the
+        end of the local day in UTC. A local `recurrence_end_date` is converted at the
+        API boundary to the UTC instant at the end of that local day. A schedule-anchored
+        month/year recurrence derives `recurrence_anchor_day` from the local due date when
+        omitted.
+
+        One-time items must not set recurrence end fields. `recurrence_end_date` and
+        `recurrence_remaining_count` are mutually exclusive. `recurrence_remaining_count`
+        is initialized from the requested total occurrences and includes the current one.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ItemCreate'
+      responses:
+        '201':
+          description: Item created.
+          headers:
+            Location:
+              description: Relative URL of the created item.
+              schema:
+                type: string
+                example: /api/items/42
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DueItem'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/items/{item_id}:
+    parameters:
+      - $ref: '#/components/parameters/ItemId'
+    patch:
+      tags: [Items]
+      operationId: updateItem
+      summary: Edit an active due item
+      description: |
+        Partial update. Omitted fields are unchanged; explicitly sending `null` clears
+        a nullable field. Only `active` items can be edited; completed or soft-deleted
+        items return 404.
+
+        Changing the due date of a schedule-anchored month/year item updates
+        `recurrence_anchor_day` to the new local due day.
+
+        Changing the recurrence policy recalculates the current (next) occurrence
+        immediately when the item is untouched since its latest completion, using the
+        original anchor for schedule-anchored rules or the last completion for
+        completion-anchored rules. A manually edited occurrence is preserved, and the
+        new policy applies after it is completed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ItemUpdate'
+      responses:
+        '200':
+          description: Item updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DueItem'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+    delete:
+      tags: [Items]
+      operationId: deleteItem
+      summary: Soft-delete an active item
+      description: |
+        Marks the item `deleted` after the user confirms in the UI. The entire recurring
+        series stops because no active occurrence remains. Completion history and its
+        snapshots are preserved, and history entries remain separately deletable.
+      responses:
+        '204':
+          description: Item soft-deleted.
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/items/{item_id}/complete:
+    parameters:
+      - $ref: '#/components/parameters/ItemId'
+    post:
+      tags: [Items]
+      operationId: completeItem
+      summary: Complete the current occurrence
+      description: |
+        Records a completion in one transaction. The completion log stores the item's
+        full previous state, the original scheduled due instant, and the actual
+        completion instant.
+
+        A one-time item becomes `completed` and is removed from active views; the
+        response `item` is `null`. A recurring item remains active and advances to
+        exactly one next occurrence according to its frequency, anchor mode, and end
+        conditions. If the policy has ended, the item becomes `completed` and `item`
+        is `null`.
+      responses:
+        '200':
+          description: Completion recorded and the next active item returned when applicable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompleteResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /api/history:
+    get:
+      tags: [History]
+      operationId: listHistory
+      summary: List completion history
+      description: |
+        Returns completion records in reverse chronological order by completion time.
+        Each entry is self-contained from its snapshot and remains readable after the
+        item is edited or soft-deleted. Older completions for an item remain
+        inspectable but have `can_undo = false`.
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        '200':
+          description: Completion history page.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HistoryResponse'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+
+  /api/history/{log_id}:
+    parameters:
+      - $ref: '#/components/parameters/LogId'
+    delete:
+      tags: [History]
+      operationId: deleteHistoryEntry
+      summary: Delete one completion history entry
+      description: |
+        Hard-deletes only the selected completion log after the user confirms in the UI.
+        Active items are not changed. Other history entries are not changed.
+      responses:
+        '204':
+          description: History entry deleted.
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/history/{log_id}/undo:
+    parameters:
+      - $ref: '#/components/parameters/LogId'
+    post:
+      tags: [History]
+      operationId: undoCompletion
+      summary: Undo a completion and restore the prior state
+      description: |
+        Undo is allowed only for the latest completion of an existing, non-deleted item.
+        Younger completions for the same item block undo with 409; deleted items also
+        block undo with 409.
+
+        If the current occurrence has not been edited since completion, it is restored
+        in place with its existing item ID and the log is removed. If it was edited after
+        completion, the edited occurrence is preserved, the snapshot is inserted as a new
+        active item with a new ID, the log is removed, and
+        `preserved_touched_occurrence` is `true` with a warning.
+      responses:
+        '200':
+          description: Completion undone.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UndoResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+components:
+  parameters:
+    ItemId:
+      name: item_id
+      in: path
+      required: true
+      description: Active item identifier.
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+    LogId:
+      name: log_id
+      in: path
+      required: true
+      description: Completion log identifier.
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+
+  responses:
+    NotFound:
+      description: Resource not found.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            detail: Item not found
+    Conflict:
+      description: The operation conflicts with the current state.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            olderCompletion:
+              value:
+                detail: Only the most recent completion of an item can be undone.
+            deletedItem:
+              value:
+                detail: The item has been deleted and cannot be restored.
+            notActive:
+              value:
+                detail: Only active items can be completed.
+    ValidationError:
+      description: Request validation failed.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ValidationError'
+
+  schemas:
+    Priority:
+      type: string
+      description: |
+        Item priority. Within a status bucket, items are sorted by due date ascending,
+        then by priority in descending order `critical` > `high` > `medium` > `low`.
+      enum: [low, medium, high, critical]
+      default: medium
+
+    RecurrenceFreq:
+      type: string
+      description: |
+        Recurrence frequency. `custom_days`, `custom_weeks`, `custom_months`, and
+        `custom_years` support an arbitrary positive interval; the fixed frequencies
+        require `recurrence_interval = 1`. The custom unit is encoded in the frequency
+        value because the two-table schema has no separate unit column.
+      enum:
+        - none
+        - daily
+        - weekly
+        - monthly
+        - yearly
+        - custom_days
+        - custom_weeks
+        - custom_months
+        - custom_years
+      default: none
+
+    AnchorMode:
+      type: string
+      description: |
+        `schedule` advances from the original/current due date regardless of when the
+        user completes the item. `completion` advances from the actual completion time.
+      enum: [schedule, completion]
+      default: schedule
+
+    ItemStatus:
+      type: string
+      enum: [active, completed, deleted]
+
+    DateOnlyDueInput:
+      type: object
+      additionalProperties: false
+      required: [kind, date]
+      properties:
+        kind:
+          type: string
+          const: date
+        date:
+          type: string
+          format: date
+          description: Local calendar date in the application timezone.
+
+    TimedDueInput:
+      type: object
+      additionalProperties: false
+      required: [kind, at]
+      properties:
+        kind:
+          type: string
+          const: datetime
+        at:
+          type: string
+          format: date-time
+          description: ISO-8601 datetime with an explicit UTC offset or `Z`.
+
+    DueInput:
+      description: |
+        Discriminated due input. `date` stores an instant at the end of the local day
+        for date-only items; `datetime` stores the supplied instant in UTC.
+      oneOf:
+        - $ref: '#/components/schemas/DateOnlyDueInput'
+        - $ref: '#/components/schemas/TimedDueInput'
+      discriminator:
+        propertyName: kind
+        mapping:
+          date: '#/components/schemas/DateOnlyDueInput'
+          datetime: '#/components/schemas/TimedDueInput'
+
+    DueItem:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - title
+        - notes
+        - due_at_utc
+        - is_date_only
+        - due_local_date
+        - due_local_time
+        - category
+        - priority
+        - amount_cents
+        - recurrence_freq
+        - recurrence_interval
+        - recurrence_anchor_mode
+        - recurrence_anchor_day
+        - recurrence_end_date
+        - recurrence_remaining_count
+        - status
+        - is_recurring
+        - created_at_utc
+        - updated_at_utc
+      properties:
+        id:
+          type: integer
+          format: int64
+          minimum: 1
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        notes:
+          type: string
+          maxLength: 10000
+        due_at_utc:
+          type: string
+          format: date-time
+          description: UTC instant. Date-only items use the end of the local day.
+        is_date_only:
+          type: boolean
+        due_local_date:
+          type: string
+          format: date
+          description: Due date converted to the application timezone.
+        due_local_time:
+          type: [string, 'null']
+          pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$'
+          description: Local wall-clock time for timed items; `null` for date-only items.
+        category:
+          type: [string, 'null']
+          minLength: 1
+          maxLength: 50
+          description: |
+            Free-text category label. Badge color is derived deterministically by the
+            frontend; there is no categories table.
+        priority:
+          $ref: '#/components/schemas/Priority'
+        amount_cents:
+          type: [integer, 'null']
+          format: int64
+          minimum: 0
+          description: Non-negative amount in integer cents; `null` when no amount is set.
+        recurrence_freq:
+          $ref: '#/components/schemas/RecurrenceFreq'
+        recurrence_interval:
+          type: integer
+          minimum: 1
+        recurrence_anchor_mode:
+          $ref: '#/components/schemas/AnchorMode'
+        recurrence_anchor_day:
+          type: [integer, 'null']
+          minimum: 1
+          maximum: 31
+          description: Required for schedule-anchored month/year rules; null otherwise.
+        recurrence_end_date:
+          type: [string, 'null']
+          format: date
+          description: |
+            Inclusive last valid local due date. Persisted as the UTC instant at the end
+            of this local day; the API converts only at its boundary.
+        recurrence_remaining_count:
+          type: [integer, 'null']
+          minimum: 0
+          description: |
+            Remaining occurrences including the current active occurrence. Initialized
+            from the requested total occurrences; `1` means the next completion ends a
+            count-limited series; `0` appears only on a completed count-limited series.
+        status:
+          $ref: '#/components/schemas/ItemStatus'
+        is_recurring:
+          type: boolean
+          description: Derived convenience flag; true when `recurrence_freq != none`.
+        created_at_utc:
+          type: string
+          format: date-time
+        updated_at_utc:
+          type: string
+          format: date-time
+
+    ItemCreate:
+      type: object
+      additionalProperties: false
+      required: [title, due]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        notes:
+          type: string
+          maxLength: 10000
+          default: ''
+        due:
+          $ref: '#/components/schemas/DueInput'
+        category:
+          type: [string, 'null']
+          minLength: 1
+          maxLength: 50
+        priority:
+          allOf:
+            - $ref: '#/components/schemas/Priority'
+          default: medium
+        amount_cents:
+          type: [integer, 'null']
+          format: int64
+          minimum: 0
+        recurrence_freq:
+          allOf:
+            - $ref: '#/components/schemas/RecurrenceFreq'
+          default: none
+        recurrence_interval:
+          type: integer
+          minimum: 1
+          default: 1
+        recurrence_anchor_mode:
+          allOf:
+            - $ref: '#/components/schemas/AnchorMode'
+          default: schedule
+        recurrence_anchor_day:
+          type: [integer, 'null']
+          minimum: 1
+          maximum: 31
+        recurrence_end_date:
+          type: [string, 'null']
+          format: date
+          description: |
+            Inclusive local end date. The API converts it to the UTC instant at the end
+            of that local day for persistence. Mutually exclusive with
+            `recurrence_remaining_count`.
+        recurrence_remaining_count:
+          type: [integer, 'null']
+          minimum: 1
+          description: |
+            Remaining occurrences including the initial occurrence; initialized from the
+            requested total occurrences. Mutually exclusive with `recurrence_end_date`.
+
+    ItemUpdate:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      description: |
+        Partial update. Omitted fields are unchanged; explicit `null` clears nullable
+        fields. Setting `recurrence_freq` to `none` clears recurrence metadata.
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        notes:
+          type: string
+          maxLength: 10000
+        due:
+          $ref: '#/components/schemas/DueInput'
+        category:
+          type: [string, 'null']
+          minLength: 1
+          maxLength: 50
+        priority:
+          $ref: '#/components/schemas/Priority'
+        amount_cents:
+          type: [integer, 'null']
+          format: int64
+          minimum: 0
+        recurrence_freq:
+          $ref: '#/components/schemas/RecurrenceFreq'
+        recurrence_interval:
+          type: integer
+          minimum: 1
+        recurrence_anchor_mode:
+          $ref: '#/components/schemas/AnchorMode'
+        recurrence_anchor_day:
+          type: [integer, 'null']
+          minimum: 1
+          maximum: 31
+        recurrence_end_date:
+          type: [string, 'null']
+          format: date
+        recurrence_remaining_count:
+          type: [integer, 'null']
+          minimum: 1
+
+    DashboardSummary:
+      type: object
+      additionalProperties: false
+      required: [overdue_count, due_today_count, upcoming_total_cents]
+      properties:
+        overdue_count:
+          type: integer
+          minimum: 0
+        due_today_count:
+          type: integer
+          minimum: 0
+        upcoming_total_cents:
+          type: integer
+          format: int64
+          minimum: 0
+          description: |
+            Sum of `amount_cents` for Upcoming items in the filtered result set.
+            Items with no amount are excluded; zero amounts contribute zero.
+
+    Buckets:
+      type: object
+      additionalProperties: false
+      required: [overdue, due_today, upcoming, later]
+      properties:
+        overdue:
+          type: array
+          items:
+            $ref: '#/components/schemas/DueItem'
+        due_today:
+          type: array
+          items:
+            $ref: '#/components/schemas/DueItem'
+        upcoming:
+          type: array
+          items:
+            $ref: '#/components/schemas/DueItem'
+        later:
+          type: array
+          items:
+            $ref: '#/components/schemas/DueItem'
+
+    ItemListResponse:
+      type: object
+      additionalProperties: false
+      required: [buckets, summary, currency_code, timezone]
+      properties:
+        buckets:
+          $ref: '#/components/schemas/Buckets'
+        summary:
+          $ref: '#/components/schemas/DashboardSummary'
+        currency_code:
+          type: string
+          pattern: '^[A-Z]{3}$'
+          description: ISO 4217 code used to format amounts. No conversion is performed.
+        timezone:
+          type: string
+          description: IANA timezone name used for local dates and bucket membership.
+          example: America/New_York
+
+    CompletionLog:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - item_id
+        - scheduled_due_at_utc
+        - completed_at_utc
+        - previous_state
+        - spawned_next_occurrence
+        - next_due_at_utc
+        - can_undo
+      properties:
+        id:
+          type: integer
+          format: int64
+          minimum: 1
+        item_id:
+          type: [integer, 'null']
+          format: int64
+          description: Null only if the item was hard-purged; soft deletion retains the ID.
+        scheduled_due_at_utc:
+          type: string
+          format: date-time
+          description: Original due instant of the completed occurrence.
+        completed_at_utc:
+          type: string
+          format: date-time
+        previous_state:
+          $ref: '#/components/schemas/DueItem'
+          description: |
+            Self-contained item snapshot from before completion, enriched at the API
+            boundary with derived local date/time and recurrence fields.
+        spawned_next_occurrence:
+          type: boolean
+        next_due_at_utc:
+          type: [string, 'null']
+          format: date-time
+          description: Next occurrence due instant when one was spawned; otherwise null.
+        can_undo:
+          type: boolean
+          description: True only for the latest completion of an existing, non-deleted item.
+
+    CompleteResponse:
+      type: object
+      additionalProperties: false
+      required: [log, item]
+      properties:
+        log:
+          $ref: '#/components/schemas/CompletionLog'
+        item:
+          anyOf:
+            - $ref: '#/components/schemas/DueItem'
+            - type: 'null'
+          description: |
+            The advanced active item for a recurring series, or `null` for a one-time
+            item or a recurring series that has ended.
+
+    UndoResponse:
+      type: object
+      additionalProperties: false
+      required: [restored_item, preserved_touched_occurrence, warning]
+      properties:
+        restored_item:
+          $ref: '#/components/schemas/DueItem'
+        preserved_touched_occurrence:
+          type: boolean
+          description: |
+            True when the current occurrence was edited after completion and was kept.
+            The snapshot was restored as a separate active item.
+        warning:
+          type: [string, 'null']
+          description: User-facing warning when a touched occurrence was preserved.
+
+    HistoryResponse:
+      type: object
+      additionalProperties: false
+      required: [entries, total]
+      properties:
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/CompletionLog'
+        total:
+          type: integer
+          minimum: 0
+          description: Total completion logs matching the request (before pagination).
+
+    ValidationErrorItem:
+      type: object
+      additionalProperties: false
+      required: [loc, msg, type]
+      properties:
+        loc:
+          type: array
+          items:
+            oneOf:
+              - type: string
+              - type: integer
+        msg:
+          type: string
+        type:
+          type: string
+
+    ValidationError:
+      type: object
+      additionalProperties: false
+      required: [detail]
+      properties:
+        detail:
+          type: array
+          items:
+            $ref: '#/components/schemas/ValidationErrorItem'
+
+    Error:
+      type: object
+      additionalProperties: false
+      required: [detail]
+      properties:
+        detail:
+          type: string
