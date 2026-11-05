@@ -33,7 +33,7 @@
 - [X] T002 Update `backend/pyproject.toml` to require Python >=3.12 and declare FastAPI, `uvicorn[standard]`, Pydantic >=2, pytest, httpx, ruff, and mypy; configure ruff line-length 100 and strict mypy for `backend/src/due_track`; add `backend/.python-version` with 3.12.
 - [X] T003 [P] Create backend package and test skeletons: `backend/src/due_track/{__init__.py,domain/__init__.py,db/__init__.py,api/__init__.py,api/routes/__init__.py}`, `backend/tests/unit/domain/`, and `backend/tests/integration/api/`.
 - [X] T004 [P] Initialize React 19 + Vite + TypeScript in `frontend/` with `frontend/package.json`, strict `frontend/tsconfig.json`, `frontend/vite.config.ts`, `frontend/index.html`, and scripts `dev`, `build` (`tsc -b && vite build`), `test:run`, and `preview`.
-- [ ] T005 Install and configure Tailwind CSS, shadcn/ui dependencies, `frontend/components.json`, `frontend/src/styles/index.css`, and the `@/*` alias in `frontend/tsconfig.json` and `frontend/vite.config.ts`.
+- [X] T005 Install and configure Tailwind CSS, shadcn/ui dependencies, `frontend/components.json`, `frontend/src/styles/index.css`, and the `@/*` alias in `frontend/tsconfig.json` and `frontend/vite.config.ts`.
 - [ ] T006 Configure the Vite dev proxy in `frontend/vite.config.ts` so `/api` forwards to `http://127.0.0.1:8000`.
 - [ ] T007 Configure class-based dark mode in `frontend/src/styles/index.css` and `frontend/src/components/ThemeProvider.tsx`, defaulting to the system preference and persisting the choice in localStorage.
 - [ ] T008 Add shadcn/ui primitives Button, Input, Textarea, Select, Dialog, AlertDialog, Badge, Checkbox, Label, and Separator under `frontend/src/components/ui/`.
