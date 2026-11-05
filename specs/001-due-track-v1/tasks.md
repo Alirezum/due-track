@@ -35,7 +35,7 @@
 - [X] T004 [P] Initialize React 19 + Vite + TypeScript in `frontend/` with `frontend/package.json`, strict `frontend/tsconfig.json`, `frontend/vite.config.ts`, `frontend/index.html`, and scripts `dev`, `build` (`tsc -b && vite build`), `test:run`, and `preview`.
 - [X] T005 Install and configure Tailwind CSS, shadcn/ui dependencies, `frontend/components.json`, `frontend/src/styles/index.css`, and the `@/*` alias in `frontend/tsconfig.json` and `frontend/vite.config.ts`.
 - [X] T006 Configure the Vite dev proxy in `frontend/vite.config.ts` so `/api` forwards to `http://127.0.0.1:8000`.
-- [ ] T007 Configure class-based dark mode in `frontend/src/styles/index.css` and `frontend/src/components/ThemeProvider.tsx`, defaulting to the system preference and persisting the choice in localStorage.
+- [X] T007 Configure class-based dark mode in `frontend/src/styles/index.css` and `frontend/src/components/ThemeProvider.tsx`, defaulting to the system preference and persisting the choice in localStorage.
 - [ ] T008 Add shadcn/ui primitives Button, Input, Textarea, Select, Dialog, AlertDialog, Badge, Checkbox, Label, and Separator under `frontend/src/components/ui/`.
 - [ ] T009 Add the TanStack Query client and React Router shell in `frontend/src/main.tsx` and `frontend/src/App.tsx`, including placeholder dashboard and `/history` routes.
 - [ ] T010 Add the Vitest + React Testing Library harness in `frontend/package.json`, `frontend/vitest.config.ts`, and `frontend/tests/setup.ts`.
