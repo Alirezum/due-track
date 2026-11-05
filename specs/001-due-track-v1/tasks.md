@@ -29,7 +29,7 @@
 
 **Purpose**: Initialize the two-part monorepo and shared tooling.
 
-- [ ] T001 Create the monorepo layout and move root `pyproject.toml`, `.python-version`, and `src/due_track` into `backend/`, preserving the `due_track` import package and removing the root runtime scaffold.
+- [X] T001 Create the monorepo layout and move root `pyproject.toml`, `.python-version`, and `src/due_track` into `backend/`, preserving the `due_track` import package and removing the root runtime scaffold.
 - [ ] T002 Update `backend/pyproject.toml` to require Python >=3.12 and declare FastAPI, `uvicorn[standard]`, Pydantic >=2, pytest, httpx, ruff, and mypy; configure ruff line-length 100 and strict mypy for `backend/src/due_track`; add `backend/.python-version` with 3.12.
 - [ ] T003 [P] Create backend package and test skeletons: `backend/src/due_track/{__init__.py,domain/__init__.py,db/__init__.py,api/__init__.py,api/routes/__init__.py}`, `backend/tests/unit/domain/`, and `backend/tests/integration/api/`.
 - [ ] T004 [P] Initialize React 19 + Vite + TypeScript in `frontend/` with `frontend/package.json`, strict `frontend/tsconfig.json`, `frontend/vite.config.ts`, `frontend/index.html`, and scripts `dev`, `build` (`tsc -b && vite build`), `test:run`, and `preview`.
