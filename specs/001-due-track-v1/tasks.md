@@ -37,7 +37,7 @@
 - [X] T006 Configure the Vite dev proxy in `frontend/vite.config.ts` so `/api` forwards to `http://127.0.0.1:8000`.
 - [X] T007 Configure class-based dark mode in `frontend/src/styles/index.css` and `frontend/src/components/ThemeProvider.tsx`, defaulting to the system preference and persisting the choice in localStorage.
 - [X] T008 Add shadcn/ui primitives Button, Input, Textarea, Select, Dialog, AlertDialog, Badge, Checkbox, Label, and Separator under `frontend/src/components/ui/`.
-- [ ] T009 Add the TanStack Query client and React Router shell in `frontend/src/main.tsx` and `frontend/src/App.tsx`, including placeholder dashboard and `/history` routes.
+- [X] T009 Add the TanStack Query client and React Router shell in `frontend/src/main.tsx` and `frontend/src/App.tsx`, including placeholder dashboard and `/history` routes.
 - [ ] T010 Add the Vitest + React Testing Library harness in `frontend/package.json`, `frontend/vitest.config.ts`, and `frontend/tests/setup.ts`.
 - [ ] T011 [P] Update `.gitignore` for `backend/data/*.sqlite3*`, `.env`, `node_modules/`, `dist/`, and Python caches; add backend/frontend install and run commands to `README.md`.
 
