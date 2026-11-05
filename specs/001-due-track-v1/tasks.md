@@ -39,7 +39,7 @@
 - [X] T008 Add shadcn/ui primitives Button, Input, Textarea, Select, Dialog, AlertDialog, Badge, Checkbox, Label, and Separator under `frontend/src/components/ui/`.
 - [X] T009 Add the TanStack Query client and React Router shell in `frontend/src/main.tsx` and `frontend/src/App.tsx`, including placeholder dashboard and `/history` routes.
 - [X] T010 Add the Vitest + React Testing Library harness in `frontend/package.json`, `frontend/vitest.config.ts`, and `frontend/tests/setup.ts`.
-- [ ] T011 [P] Update `.gitignore` for `backend/data/*.sqlite3*`, `.env`, `node_modules/`, `dist/`, and Python caches; add backend/frontend install and run commands to `README.md`.
+- [X] T011 [P] Update `.gitignore` for `backend/data/*.sqlite3*`, `.env`, `node_modules/`, `dist/`, and Python caches; add backend/frontend install and run commands to `README.md`.
 
 ---
 
