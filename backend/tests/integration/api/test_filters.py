@@ -220,3 +220,23 @@ def test_invalid_filter_values_are_rejected(client: TestClient) -> None:
     assert client.get("/api/items", params={"priority": "urgent"}).status_code == 422
     assert client.get("/api/items", params={"category": ""}).status_code == 422
     assert client.get("/api/items", params={"q": "x" * 201}).status_code == 422
+
+
+def test_scope_defaults_to_all_and_accepts_both_values(client: TestClient) -> None:
+    _seed(client)
+
+    default = client.get("/api/items")
+    explicit_all = client.get("/api/items", params={"scope": "all"})
+    upcoming = client.get("/api/items", params={"scope": "upcoming"})
+
+    assert default.status_code == 200
+    assert explicit_all.status_code == 200
+    assert upcoming.status_code == 200
+    assert default.json()["buckets"] == explicit_all.json()["buckets"]
+    assert default.json()["summary"] == explicit_all.json()["summary"]
+    assert default.json()["buckets"]["overdue"]
+
+
+def test_invalid_scope_is_rejected_by_both_read_endpoints(client: TestClient) -> None:
+    assert client.get("/api/items", params={"scope": "someday"}).status_code == 422
+    assert client.get("/api/timeline", params={"scope": "someday"}).status_code == 422
