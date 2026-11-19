@@ -5,7 +5,7 @@ and no external service calls: every deadline stays in a local SQLite file.
 
 - Backend: Python 3.12+, FastAPI, SQLite
 - Frontend: React 19, Vite, TypeScript, Tailwind CSS, shadcn/ui
-- Keyboard-first dashboard with visible focus and a discoverable shortcut panel
+- Keyboard-first dashboard, history, and timeline with visible focus and a discoverable shortcut panel
 
 ## Layout
 
@@ -15,7 +15,22 @@ frontend/           React single-page app
 specs/              Product specification, plan, and quality scenarios
 specs/001-due-track-v1/contracts/openapi.yaml
                     Published OpenAPI contract
+specs/002-deadline-timeline/
+                    Timeline specification, plan, and validation guide
 ```
+
+## Destinations
+
+The SPA has three top-level destinations:
+
+- **Deadlines** — the dashboard with status buckets, summaries, filters, and quick actions.
+- **Timeline** — a horizontal ledger at ≥1024 px and a vertical chronological ledger below it.
+  It shows active deadlines against a labelled now line, with exact due moments, live countdowns,
+  server-assigned urgency, clusters, edge summaries, filters, details, and actions.
+- **History** — completed-deadline audit records with single-step undo and deletion.
+
+All three share the same active/completed/deleted semantics. The Timeline is a read-only
+projection plus the existing item actions; it introduces no persisted timeline state.
 
 ## Requirements
 
@@ -94,6 +109,19 @@ endpoint: labels are trimmed to 1–50 characters, filtered case-insensitively, 
 colors derived deterministically in the frontend. They are intentionally not normalized into a
 separate entity.
 
+## Timeline projection
+
+`GET /api/timeline` returns `reference_time_utc`, `timezone`, `currency_code`, and a chronological
+`entries` array of active deadlines. Each entry carries the existing `DueItem` plus
+`urgency` (`overdue`, `due_now`, `within_24h`, `within_7d`, or `later`) and `seconds_until_due`.
+The endpoint accepts the same `category`, `priority`, `recurring`, and `q` filters as the item list
+and is strictly read-only.
+
+Urgency is computed once by the backend in `backend/src/due_track/domain/timeline.py`. The frontend
+formats and ticks countdowns against the response's reference time but never re-derives a status,
+so client clock skew cannot reclassify an entry. The projection reads only existing `due_items`
+columns: there is **no migration**, no new table, and no persisted timeline state.
+
 ## Timezone boundary
 
 All persisted timestamps and due boundaries are UTC, including `recurrence_end_at_utc`. Local
@@ -111,7 +139,8 @@ performs the conversions at the boundary.
 |-----|--------|
 | `N` | Open quick-add and focus the title |
 | `/` | Focus dashboard search |
-| `J` / `K` | Move to the next / previous visible deadline |
+| `J` / `K` | Move to the next / previous deadline |
+| `Home` / `End` | Move to the first / last deadline |
 | `Enter` | Open the active deadline |
 | `C` | Complete the active deadline |
 | `E` | Edit the active deadline |
@@ -119,7 +148,9 @@ performs the conversions at the boundary.
 | `?` | Show the shortcut help panel |
 | `Esc` | Close the open dialog, confirmation, or help panel |
 
-Shortcuts pause while typing in an input, textarea, select, or contenteditable element.
+Shortcuts pause while typing in an input, textarea, select, or contenteditable element. On the
+Timeline, `J`/`K`/`Home`/`End` move through the full chronological sequence, including entries
+inside clusters and beyond edge summaries; the selected horizon does not change.
 
 ## Quality gates
 
@@ -140,4 +171,12 @@ npm run lint
 
 The required frontend gate is `npm run build`; `test:run` is required for behavior changes. Manual
 validation scenarios, including bucket boundaries, recurrence, history, and keyboard operation, are
-listed in `specs/001-due-track-v1/quickstart.md`.
+listed in `specs/001-due-track-v1/quickstart.md`. Timeline scenarios, including horizons, clusters,
+detail actions, 320–1920 px widths, 200% zoom, light/dark themes, and reduced motion, are listed in
+`specs/002-deadline-timeline/quickstart.md`.
+
+## Frontend design
+
+`.specify/memory/constitution.md` v1.1.0 requires loading the `frontend-design` skill before making
+UI or visual-design decisions. Product specifications, plans, and existing design tokens take
+precedence over the skill; keep new work within those constraints.

@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { isTypingTarget } from '@/lib/shortcuts'
+import { isNativeActivationTarget, isTypingTarget } from '@/lib/shortcuts'
 
 export type ShortcutHandlers = {
   onNew?: () => void
@@ -58,6 +58,10 @@ export function useShortcuts(handlers: ShortcutHandlers, { enabled = true }: Sho
       }
 
       if (!enabledRef.current || isTypingTarget(event.target)) {
+        return
+      }
+
+      if (event.key === 'Enter' && isNativeActivationTarget(event.target)) {
         return
       }
 

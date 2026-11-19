@@ -109,3 +109,21 @@ export function isTypingTarget(target: EventTarget | null): boolean {
 
   return target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT'
 }
+
+/**
+ * Enter has a native activation behavior on these controls. The global
+ * shortcut must let that behavior run instead of cancelling it, otherwise
+ * pressing Enter on a toolbar, edge, cluster, or marker button would open the
+ * active deadline instead of activating the focused control.
+ */
+export function isNativeActivationTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) {
+    return false
+  }
+
+  return Boolean(
+    target.closest(
+      'button, a[href], summary, [role="button"], [role="link"], [role="menuitem"], [role="tab"], [role="option"]',
+    ),
+  )
+}

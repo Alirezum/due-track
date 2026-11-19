@@ -40,7 +40,7 @@
   --timeline-later-soft: oklch(0.94 0.008 150);
   --timeline-cluster: oklch(0.3 0.05 165);
   --timeline-cluster-foreground: oklch(0.98 0.005 100);
-  --timeline-highlight: oklch(0.66 0.13 85);
+  --timeline-highlight: oklch(0.63 0.13 85);
   --timeline-edge: oklch(0.6 0.03 160);
 }
 

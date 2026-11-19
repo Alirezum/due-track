@@ -492,6 +492,34 @@ describe('TimelinePage US2 horizons, edges, clusters, filters, and width', () =>
     expect(screen.queryByText('Chronological ledger')).not.toBeInTheDocument()
   })
 
+  it('lets Enter activate horizon and cluster controls without opening details', async () => {
+    mockWideViewport()
+    const user = userEvent.setup()
+    renderTimeline(makeDenseTimeline())
+
+    await screen.findByTestId('timeline-now')
+
+    const horizon = screen.getByRole('button', { name: '7d' })
+    horizon.focus()
+    await user.keyboard('{Enter}')
+    expect(horizon).toHaveAttribute('aria-pressed', 'true')
+    expect(
+      screen.queryByRole('complementary', { name: /Deadline details/ }),
+    ).not.toBeInTheDocument()
+
+    const clusters = await screen.findAllByRole('button', { name: /deadlines here/ })
+    const cluster = clusters[0]
+    if (!cluster) {
+      throw new Error('expected a timeline cluster')
+    }
+    cluster.focus()
+    await user.keyboard('{Enter}')
+    expect(cluster).toHaveAttribute('aria-expanded', 'true')
+    expect(
+      screen.queryByRole('complementary', { name: /Deadline details/ }),
+    ).not.toBeInTheDocument()
+  })
+
   it('renders 1,000 deadlines within budget with a bounded marker count', async () => {
     mockWideViewport(1280)
     const started = performance.now()
@@ -792,6 +820,31 @@ describe('TimelinePage US3 details, actions, and keyboard', () => {
     expect(marker).toHaveAttribute('data-highlighted', 'true')
     expect(screen.getByRole('button', { name: '30d' })).toHaveAttribute('aria-pressed', 'true')
     expect(screen.queryByTestId('filter-exclusion-notice')).not.toBeInTheDocument()
+  })
+
+  it('keeps selection, focus, and horizon stable across 100 consecutive actions', async () => {
+    const user = userEvent.setup()
+    const entries = [
+      entryAt(110, 'Stability alpha', HOUR),
+      entryAt(111, 'Stability beta', 2 * HOUR),
+      entryAt(112, 'Stability gamma', 3 * HOUR),
+      entryAt(113, 'Stability delta', 4 * HOUR),
+      entryAt(114, 'Stability epsilon', 5 * HOUR),
+    ]
+    renderTimeline(makeTimelineResponse(entries))
+
+    await screen.findByRole('list', { name: 'Deadlines in chronological order' })
+
+    for (let index = 0; index < 100; index += 1) {
+      await user.keyboard(index < 50 ? 'j' : 'k')
+      const selected = document.querySelectorAll('[aria-current="true"]')
+      expect(selected).toHaveLength(1)
+      expect(selected[0]).toHaveAttribute('data-timeline-marker')
+      await waitFor(() => expect(selected[0]).toHaveFocus())
+    }
+
+    expect(screen.getByRole('button', { name: '30d' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByTestId('timeline-now-divider')).toBeInTheDocument()
   })
 
   it('supports J, K, Home, End, Enter, Esc, E, Delete, and C from the keyboard', async () => {

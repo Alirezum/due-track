@@ -38,13 +38,6 @@ export const PRIORITY_LABEL: Record<Priority, string> = {
   low: 'Low',
 }
 
-export const PRIORITY_BORDER_CLASS: Record<Priority, string> = {
-  critical: 'border-l-rose-600 dark:border-l-rose-400',
-  high: 'border-l-amber-500 dark:border-l-amber-400',
-  medium: 'border-l-teal-600 dark:border-l-teal-400',
-  low: 'border-l-slate-400 dark:border-l-slate-500',
-}
-
 export function markerSide(urgency: Urgency): 'above' | 'below' {
   return urgency === 'overdue' ? 'below' : 'above'
 }
