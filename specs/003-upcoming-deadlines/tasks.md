@@ -123,7 +123,7 @@ skill (Constitution VI).
 
 - [X] T023 [P] [US2] Add Dashboard expense-free tests in `frontend/tests/dashboard.test.tsx`: no amount or currency in the summary or cards; the summary shows a `Next 7 days` count equal to `buckets.upcoming.length` instead of an expense total, and due-today/overdue items are not double-counted in that cell; filtering and sorting behavior is unchanged. (Committed atomically with T026 and T028 after the card amount assertion failed for the expected reason.)
 - [X] T024 [P] [US2] Add Timeline expense-free tests in `frontend/tests/timeline.test.tsx`: no amount or currency in markers or the detail view; due moment, countdown/status, category, priority, recurrence, and notes remain; detail actions remain. (Committed atomically with T027 after the detail Amount assertion failed for the expected reason.)
-- [ ] T025 [P] [US2] Add History and edit regression tests in `frontend/tests/history.test.tsx`: History still displays the stored amount; opening and saving an edit does not clear or change `amount_cents`; the edit form still shows and submits the amount; no primary view renders it. API-shape assertions belong to T013 and T032, not this UI test.
+- [X] T025 [P] [US2] Add History and edit regression tests in `frontend/tests/history.test.tsx`: History still displays the stored amount; opening and saving an edit does not clear or change `amount_cents`; the edit form still shows and submits the amount; no primary view renders it. API-shape assertions belong to T013 and T032, not this UI test. (Regression coverage passed before T026/T027 because the preserved behavior was already correct; committed separately after the expense-free changes.)
 
 ### Implementation for User Story 2
 

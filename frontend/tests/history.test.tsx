@@ -11,6 +11,7 @@ import type {
   ItemListResponse,
   UndoResponse,
 } from '@/api/types'
+import { ItemForm } from '@/components/ItemForm'
 import { HistoryPage } from '@/pages/HistoryPage'
 
 function makeItem(overrides: Partial<DueItem> & Pick<DueItem, 'id' | 'title'>): DueItem {
@@ -183,6 +184,45 @@ describe('history', () => {
     expect(within(entries[1]).getByText('Personal')).toBeInTheDocument()
     expect(within(entries[1]).getByText(/Nov 10, 2026/)).toBeInTheDocument()
     expect(within(entries[1]).getByText(/Nov 4, 2026/)).toBeInTheDocument()
+  })
+
+  it('keeps the stored amount in History and preserves it through the edit form', async () => {
+    const user = userEvent.setup()
+    mockFetch((url, init) => {
+      const method = init.method ?? 'GET'
+      if (isItemList(url, method)) {
+        return jsonResponse(ITEM_LIST)
+      }
+      expect(isHistoryList(url, method)).toBe(true)
+      return jsonResponse(HISTORY)
+    })
+    renderHistory()
+
+    const list = await screen.findByRole('list', { name: 'Completion history' })
+    const entries = within(list).getAllByRole('listitem')
+    expect(within(entries[0]).getByText('$1,200.00')).toBeInTheDocument()
+
+    const onSubmit = vi.fn()
+    render(
+      <ItemForm
+        item={RENT_SNAPSHOT}
+        submitLabel="Save changes"
+        isSubmitting={false}
+        serverError={null}
+        onSubmit={onSubmit}
+        onCancel={() => {}}
+      />,
+    )
+
+    expect(screen.getByLabelText('Amount')).toHaveValue('1200.00')
+    const title = screen.getByLabelText('Title')
+    await user.clear(title)
+    await user.type(title, 'Rent updated')
+    await user.click(screen.getByRole('button', { name: 'Save changes' }))
+
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Rent updated', amount_cents: 120000 }),
+    )
   })
 
   it('offers undo only for the latest completion of a live item', async () => {
