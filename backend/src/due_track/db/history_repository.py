@@ -102,6 +102,44 @@ def get_latest_completion_log(
     return _row_to_record(row) if row is not None else None
 
 
+def list_completion_logs(
+    connection: sqlite3.Connection,
+    *,
+    limit: int,
+    offset: int,
+) -> list[CompletionLogRecord]:
+    rows = connection.execute(
+        f"""
+        SELECT {", ".join(COMPLETION_LOG_COLUMNS)}
+        FROM completion_logs
+        ORDER BY completed_at_utc DESC, id DESC
+        LIMIT ? OFFSET ?
+        """,
+        (limit, offset),
+    ).fetchall()
+    return [_row_to_record(row) for row in rows]
+
+
+def get_completion_log(
+    connection: sqlite3.Connection,
+    log_id: int,
+) -> CompletionLogRecord | None:
+    row = connection.execute(
+        f"""
+        SELECT {", ".join(COMPLETION_LOG_COLUMNS)}
+        FROM completion_logs
+        WHERE id = ?
+        """,
+        (log_id,),
+    ).fetchone()
+    return _row_to_record(row) if row is not None else None
+
+
+def delete_completion_log(connection: sqlite3.Connection, log_id: int) -> bool:
+    cursor = connection.execute("DELETE FROM completion_logs WHERE id = ?", (log_id,))
+    return cursor.rowcount > 0
+
+
 def count_completions(connection: sqlite3.Connection) -> int:
     row = connection.execute("SELECT COUNT(*) AS count FROM completion_logs").fetchone()
     return int(row["count"]) if row is not None else 0
