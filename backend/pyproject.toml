@@ -10,7 +10,7 @@ dependencies = [
 ]
 
 [project.scripts]
-due-track = "due_track:main"
+due-track = "due_track.main:run"
 
 [build-system]
 requires = ["uv_build>=0.13.6,<0.14.0"]

@@ -1,2 +1,1 @@
-def main() -> None:
-    print("Hello from due-track!")
+"""due-track: local-first, single-user deadline and obligation tracker."""
