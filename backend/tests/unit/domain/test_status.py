@@ -78,7 +78,7 @@ def test_local_midnight_at_the_reference_instant_is_due_today() -> None:
 
 
 def test_dst_case_uses_supplied_local_date_and_utc_instant_without_conversion() -> None:
-    # Boundary supplies the components after the fall-back transition; the domain only compares them.
+    # Boundary supplies post-transition components; the domain only compares them.
     reference_time = datetime(2026, 11, 1, 5, 30, tzinfo=UTC)
     due_at_utc = datetime(2026, 11, 1, 4, 30, tzinfo=UTC)
 

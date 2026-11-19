@@ -235,8 +235,12 @@ def test_summary_uses_the_same_result_set_and_skips_missing_amounts(
 ) -> None:
     _create(client, title="Overdue", due={"kind": "datetime", "at": "2026-11-05T11:00:00Z"})
     _create(client, title="Due today")
-    _create(client, title="Upcoming one", due={"kind": "date", "date": "2026-11-06"}, amount_cents=1000)
-    _create(client, title="Upcoming zero", due={"kind": "date", "date": "2026-11-07"}, amount_cents=0)
+    _create(
+        client, title="Upcoming one", due={"kind": "date", "date": "2026-11-06"}, amount_cents=1000
+    )
+    _create(
+        client, title="Upcoming zero", due={"kind": "date", "date": "2026-11-07"}, amount_cents=0
+    )
     _create(client, title="Upcoming none", due={"kind": "date", "date": "2026-11-08"})
 
     body = client.get("/api/items").json()
