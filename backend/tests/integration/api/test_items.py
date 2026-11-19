@@ -193,6 +193,10 @@ def test_dashboard_groups_items_into_exactly_one_bucket(client: TestClient) -> N
     ]
     assert len(all_ids) == len(set(all_ids)) == 6
 
+    explicit_all = client.get("/api/items", params={"scope": "all"})
+    assert explicit_all.status_code == 200
+    assert explicit_all.json() == body
+
 
 def test_bucket_order_uses_due_priority_and_case_insensitive_title(client: TestClient) -> None:
     _create(

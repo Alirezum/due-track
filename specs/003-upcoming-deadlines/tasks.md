@@ -59,7 +59,7 @@ independently. US1 is the MVP; US2 and US3 build on the same pages but are separ
 - [X] T007 Update `useItems(filters = EMPTY_FILTERS, scope: ItemScope = 'all', options?)` in `frontend/src/hooks/useItems.ts`: query key `['items', filters, scope]`, keep `placeholderData: keepPreviousData`, and pass `refetchInterval`/`refetchOnWindowFocus` options. The default `all` preserves History and existing callers. Depends on T005.
 - [X] T008 Update `useTimeline(filters = EMPTY_FILTERS, scope: ItemScope = 'all')` in `frontend/src/hooks/useTimeline.ts`: query key `['timeline', filters, scope]`, keeping the adaptive refetch interval and server-anchored clock. Depends on T005.
 - [X] T009 Update `frontend/tests/timelineFixtures.ts` and existing fixtures in `frontend/tests/dashboard.test.tsx`, `frontend/tests/timeline.test.tsx`, and `frontend/tests/history.test.tsx` for the required `overdue_count` field and scope-aware query keys, keeping all existing assertions passing. Depends on T005, T007, T008.
-- [ ] T010 Update existing backend timeline/items assertions in `backend/tests/integration/api/test_timeline.py` and `backend/tests/integration/api/test_items.py` for the additive `overdue_count` field (initially `0` from the temporary default) and default `all` behavior, keeping all pre-003 expectations intact. Depends on T002.
+- [X] T010 Update existing backend timeline/items assertions in `backend/tests/integration/api/test_timeline.py` and `backend/tests/integration/api/test_items.py` for the additive `overdue_count` field (initially `0` from the temporary default) and default `all` behavior, keeping all pre-003 expectations intact. Depends on T002.
 
 **Checkpoint**: Shared contract, types, filters, and hooks are ready; user stories can begin.
 

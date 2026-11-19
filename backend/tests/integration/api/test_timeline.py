@@ -55,6 +55,7 @@ def test_returns_every_filtered_active_item_exactly_once(
     assert body["reference_time_utc"].startswith("2026-11-05T12:00:00")
     assert body["timezone"] == "America/New_York"
     assert body["currency_code"] == "USD"
+    assert body["overdue_count"] == 0
 
 
 def test_orders_by_due_then_priority_then_title_then_id(
@@ -147,6 +148,8 @@ def test_urgency_and_signed_seconds_match_the_domain_functions(
     reference = datetime.fromisoformat(body["reference_time_utc"])
 
     assert len(body["entries"]) == len(due_values)
+    assert isinstance(body["overdue_count"], int)
+    assert body["overdue_count"] >= 0
     for entry in body["entries"]:
         due = datetime.fromisoformat(entry["item"]["due_at_utc"])
         assert entry["urgency"] == classify_urgency(due_at_utc=due, reference_time=reference)
@@ -246,6 +249,7 @@ def test_empty_result_returns_empty_entries(client: TestClient) -> None:
     assert body["entries"] == []
     assert body["timezone"] == "America/New_York"
     assert body["currency_code"] == "USD"
+    assert body["overdue_count"] == 0
 
 
 @pytest.mark.parametrize(
