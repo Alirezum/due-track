@@ -4,6 +4,8 @@ import { isTypingTarget } from '@/lib/shortcuts'
 export type ShortcutHandlers = {
   onNew?: () => void
   onFocusSearch?: () => void
+  onFirstItem?: () => void
+  onLastItem?: () => void
   onNextItem?: () => void
   onPreviousItem?: () => void
   onOpenItem?: () => void
@@ -17,6 +19,8 @@ export type ShortcutHandlers = {
 const KEY_HANDLERS: Record<string, keyof ShortcutHandlers> = {
   n: 'onNew',
   '/': 'onFocusSearch',
+  Home: 'onFirstItem',
+  End: 'onLastItem',
   j: 'onNextItem',
   k: 'onPreviousItem',
   Enter: 'onOpenItem',

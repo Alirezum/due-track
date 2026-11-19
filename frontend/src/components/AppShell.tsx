@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils'
 
 const NAV_ITEMS = [
   { to: '/', label: 'Deadlines', end: true },
+  { to: '/timeline', label: 'Timeline', end: false },
   { to: '/history', label: 'History', end: false },
 ] as const
 
