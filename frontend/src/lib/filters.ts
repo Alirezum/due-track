@@ -1,4 +1,4 @@
-import type { Priority } from '@/api/types'
+import type { ItemScope, Priority } from '@/api/types'
 
 export type RecurrenceFilter = 'all' | 'true' | 'false'
 
@@ -25,7 +25,7 @@ export function hasActiveFilters(filters: ItemFilters): boolean {
   )
 }
 
-export function filtersToQueryString(filters: ItemFilters): string {
+export function filtersToQueryString(filters: ItemFilters, scope?: ItemScope): string {
   const params = new URLSearchParams()
   const category = filters.category.trim()
   const search = filters.q.trim()
@@ -41,6 +41,9 @@ export function filtersToQueryString(filters: ItemFilters): string {
   }
   if (search) {
     params.set('q', search)
+  }
+  if (scope) {
+    params.set('scope', scope)
   }
 
   const query = params.toString()

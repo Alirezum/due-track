@@ -5,6 +5,7 @@ import type { ReactNode } from 'react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DueItem, ItemListResponse } from '@/api/types'
+import { EMPTY_FILTERS, filtersToQueryString } from '@/lib/filters'
 import { DashboardPage } from '@/pages/DashboardPage'
 
 function makeItem(overrides: Partial<DueItem> & Pick<DueItem, 'id' | 'title'>): DueItem {
@@ -170,6 +171,27 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals()
+})
+
+describe('filtersToQueryString', () => {
+  it('leaves existing filter combinations unchanged when no scope is provided', () => {
+    expect(filtersToQueryString(EMPTY_FILTERS)).toBe('')
+    expect(
+      filtersToQueryString({
+        category: 'Bills',
+        priority: 'high',
+        recurring: 'true',
+        q: 'rent',
+      }),
+    ).toBe('?category=Bills&priority=high&recurring=true&q=rent')
+  })
+
+  it('appends scope only when provided', () => {
+    expect(filtersToQueryString(EMPTY_FILTERS, 'upcoming')).toBe('?scope=upcoming')
+    expect(
+      filtersToQueryString({ ...EMPTY_FILTERS, category: 'Bills' }, 'all'),
+    ).toBe('?category=Bills&scope=all')
+  })
 })
 
 describe('Dashboard filters', () => {
