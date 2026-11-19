@@ -57,6 +57,7 @@ def validate_recurrence_policy(
     recurrence_anchor_day: int | None,
     recurrence_end_date: date | None,
     recurrence_remaining_count: int | None,
+    allow_missing_anchor_day: bool = False,
 ) -> None:
     if recurrence_interval < 1:
         raise ValueError("recurrence_interval must be at least 1")
@@ -87,7 +88,8 @@ def validate_recurrence_policy(
         raise ValueError("completion-anchored recurrences must not set recurrence_anchor_day")
 
     if (
-        recurrence_anchor_mode == "schedule"
+        not allow_missing_anchor_day
+        and recurrence_anchor_mode == "schedule"
         and recurrence_freq in MONTH_OR_YEAR_FREQUENCIES
         and recurrence_anchor_day is None
     ):
@@ -136,6 +138,7 @@ class ItemCreate(StrictModel):
             recurrence_anchor_day=self.recurrence_anchor_day,
             recurrence_end_date=self.recurrence_end_date,
             recurrence_remaining_count=self.recurrence_remaining_count,
+            allow_missing_anchor_day=True,
         )
         return self
 

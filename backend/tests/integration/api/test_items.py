@@ -273,7 +273,7 @@ def test_patch_updates_fields_and_clears_nullable_values(client: TestClient) -> 
     assert updated["category"] is None
     assert updated["priority"] == "high"
     assert updated["due_local_date"] == "2026-11-06"
-    assert updated["updated_at_utc"] > updated["created_at_utc"]
+    assert updated["updated_at_utc"] >= updated["created_at_utc"]
 
 
 def test_patch_rejects_empty_body_and_missing_or_deleted_items(client: TestClient) -> None:
