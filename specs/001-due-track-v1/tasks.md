@@ -162,7 +162,7 @@
 ### Tests for User Story 4 (required)
 
 - [X] T061 [P] [US4] Write API history/undo tests in `backend/tests/integration/api/test_history.py` for reverse-chronological order, pagination, snapshot completeness including enriched derived fields, `can_undo` latest/older/deleted behavior, undo untouched restoring the same item ID, undo touched preserving the edited row and restoring the prior occurrence with a new ID and warning, and history deletion leaving active items unchanged.
-- [ ] T062 [P] [US4] Write frontend history tests in `frontend/tests/history.test.tsx` for reverse-chronological rendering, snapshot details, undo availability, preservation warning, and delete confirmation.
+- [X] T062 [P] [US4] Write frontend history tests in `frontend/tests/history.test.tsx` for reverse-chronological rendering, snapshot details, undo availability, preservation warning, and delete confirmation.
 
 ### Implementation for User Story 4
 
