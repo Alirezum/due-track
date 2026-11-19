@@ -127,3 +127,57 @@ def test_representative_responses_match_documented_schemas(client: TestClient) -
     missing = client.delete("/api/items/999999")
     assert missing.status_code == 404, missing.text
     _assert_schema(contract, "Error", missing.json())
+
+
+def test_scope_upcoming_responses_match_documented_schemas(client: TestClient) -> None:
+    contract = _load_contract()
+
+    overdue = client.post(
+        "/api/items",
+        json={
+            "title": "Scope overdue",
+            "due": {"kind": "datetime", "at": "2026-11-05T11:00:00Z"},
+        },
+    )
+    assert overdue.status_code == 201, overdue.text
+    upcoming = client.post(
+        "/api/items",
+        json={
+            "title": "Scope upcoming",
+            "due": {"kind": "date", "date": "2026-11-06"},
+        },
+    )
+    assert upcoming.status_code == 201, upcoming.text
+    overdue_id = overdue.json()["id"]
+    upcoming_id = upcoming.json()["id"]
+
+    listing = client.get("/api/items", params={"scope": "upcoming", "q": "Scope"})
+    assert listing.status_code == 200, listing.text
+    listing_body = listing.json()
+    _assert_schema(contract, "ItemListResponse", listing_body)
+    assert listing_body["buckets"]["overdue"] == []
+    assert listing_body["summary"]["overdue_count"] == 1
+    assert [item["id"] for item in listing_body["buckets"]["upcoming"]] == [upcoming_id]
+
+    all_listing = client.get("/api/items", params={"q": "Scope"})
+    assert all_listing.status_code == 200, all_listing.text
+    all_listing_body = all_listing.json()
+    _assert_schema(contract, "ItemListResponse", all_listing_body)
+    assert [item["id"] for item in all_listing_body["buckets"]["overdue"]] == [overdue_id]
+
+    timeline = client.get("/api/timeline", params={"scope": "upcoming", "q": "Scope"})
+    assert timeline.status_code == 200, timeline.text
+    timeline_body = timeline.json()
+    _assert_schema(contract, "TimelineResponse", timeline_body)
+    assert timeline_body["overdue_count"] == 1
+    assert [entry["item"]["id"] for entry in timeline_body["entries"]] == [upcoming_id]
+
+    all_timeline = client.get("/api/timeline", params={"q": "Scope"})
+    assert all_timeline.status_code == 200, all_timeline.text
+    all_timeline_body = all_timeline.json()
+    _assert_schema(contract, "TimelineResponse", all_timeline_body)
+    assert all_timeline_body["overdue_count"] == 1
+    assert [entry["item"]["id"] for entry in all_timeline_body["entries"]] == [
+        overdue_id,
+        upcoming_id,
+    ]
