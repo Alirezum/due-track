@@ -4,10 +4,10 @@ import json
 import sqlite3
 from dataclasses import asdict
 from datetime import date, datetime
-from typing import Any, cast
+from typing import Annotated, Any, cast
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, HTTPException, Query, Response
 
 from due_track.api.deps import DatabaseDep, NowDep, SettingsDep
 from due_track.api.schemas import (
@@ -20,6 +20,7 @@ from due_track.api.schemas import (
     ItemCreate,
     ItemListResponse,
     ItemUpdate,
+    Priority,
     RecurrenceFrequency,
     validate_recurrence_policy,
 )
@@ -181,6 +182,10 @@ def list_items(
     connection: DatabaseDep,
     settings: SettingsDep,
     now: NowDep,
+    category: Annotated[str | None, Query(min_length=1, max_length=50)] = None,
+    priority: Annotated[Priority | None, Query()] = None,
+    recurring: Annotated[bool | None, Query()] = None,
+    q: Annotated[str | None, Query(max_length=200)] = None,
 ) -> ItemListResponse:
     tz = _zone(settings)
     reference_local_date = utc_to_local_date(now, tz)
@@ -191,7 +196,16 @@ def list_items(
         Bucket.LATER: [],
     }
 
-    for record in list_active_items(connection):
+    category_filter = category.strip() if category is not None else None
+    search = q.strip() if q is not None else None
+    records = list_active_items(
+        connection,
+        category=category_filter or None,
+        priority=priority,
+        recurring=recurring,
+        q=search or None,
+    )
+    for record in records:
         item = _record_to_due_item(record, tz)
         bucket = classify_bucket(
             due_at_utc=item.due_at_utc,
