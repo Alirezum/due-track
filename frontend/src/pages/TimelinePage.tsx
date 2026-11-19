@@ -767,7 +767,6 @@ export function TimelinePage() {
           {selectedEntry && detailOpen ? (
             <TimelineDetailShell
               entry={selectedEntry}
-              currencyCode={data.currency_code}
               timezone={timezone}
               liveNowMs={liveNowMs}
               onClose={closeDetail}

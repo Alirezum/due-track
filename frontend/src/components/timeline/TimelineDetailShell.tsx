@@ -14,7 +14,6 @@ import { cn } from '@/lib/utils'
 
 export type TimelineDetailShellProps = {
   entry: TimelineEntry
-  currencyCode: string
   timezone: string
   liveNowMs: number
   onClose: () => void
@@ -25,7 +24,6 @@ export type TimelineDetailShellProps = {
 
 export function TimelineDetailShell({
   entry,
-  currencyCode,
   timezone,
   liveNowMs,
   onClose,
@@ -39,7 +37,6 @@ export function TimelineDetailShell({
   const detail = (
     <TimelineDetail
       entry={entry}
-      currencyCode={currencyCode}
       timezone={timezone}
       liveNowMs={liveNowMs}
       onComplete={onComplete}

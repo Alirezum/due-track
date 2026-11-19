@@ -908,11 +908,16 @@ describe('TimelinePage US3 details, actions, and keyboard', () => {
     })
     renderTimeline(makeTimelineResponse([entry]))
 
-    await user.click(await screen.findByRole('button', { name: /Rent payment/ }))
+    const marker = await screen.findByRole('button', { name: /Rent payment/ })
+    expect(marker).not.toHaveTextContent('$')
+    expect(marker).not.toHaveTextContent('USD')
+    await user.click(marker)
     const dialog = await screen.findByRole('dialog', { name: 'Deadline details' })
 
     expect(within(dialog).getByText('Rent payment')).toBeInTheDocument()
-    expect(within(dialog).getByText(/\$1,200\.00/)).toBeInTheDocument()
+    expect(within(dialog).queryByText(/\$1,200\.00/)).not.toBeInTheDocument()
+    expect(within(dialog).queryByText('Amount')).not.toBeInTheDocument()
+    expect(within(dialog).queryByText(/USD/)).not.toBeInTheDocument()
     expect(within(dialog).getByText('Repeats monthly')).toBeInTheDocument()
     expect(within(dialog).getByText(/Day 2 of the month/)).toBeInTheDocument()
     expect(within(dialog).getByText(/5 occurrences remain/)).toBeInTheDocument()

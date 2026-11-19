@@ -1,6 +1,6 @@
 import { Button } from '@/components/ui/button'
 import type { TimelineEntry } from '@/api/types'
-import { formatAmount, formatLocalDate } from '@/lib/format'
+import { formatLocalDate } from '@/lib/format'
 import { recurrenceAnchorSummary, recurrenceSummary } from '@/lib/recurrence'
 import { formatCountdown } from '@/lib/timeline/countdown'
 import { formatTimelineDueExact } from '@/lib/timeline/format'
@@ -14,7 +14,6 @@ import { cn } from '@/lib/utils'
 
 export type TimelineDetailProps = {
   entry: TimelineEntry
-  currencyCode: string
   timezone: string
   liveNowMs: number
   onComplete: (entry: TimelineEntry) => void
@@ -24,7 +23,6 @@ export type TimelineDetailProps = {
 
 export function TimelineDetail({
   entry,
-  currencyCode,
   timezone,
   liveNowMs,
   onComplete,
@@ -35,7 +33,6 @@ export function TimelineDetail({
   const dueMs = Date.parse(item.due_at_utc)
   const remaining = Number.isFinite(dueMs) ? Math.floor((dueMs - liveNowMs) / 1000) : 0
   const countdown = formatCountdown(remaining, entry.urgency)
-  const amount = formatAmount(item.amount_cents, currencyCode)
   const recurrence = recurrenceSummary(item)
   const anchor = recurrenceAnchorSummary(item)
 
@@ -101,11 +98,6 @@ export function TimelineDetail({
           Category
         </dt>
         <dd className="[overflow-wrap:anywhere]">{item.category ?? 'None'}</dd>
-
-        <dt className="text-[0.6875rem] font-semibold tracking-[0.12em] text-muted-foreground uppercase">
-          Amount
-        </dt>
-        <dd className="tabular-nums">{amount ?? '—'}</dd>
 
         <dt className="text-[0.6875rem] font-semibold tracking-[0.12em] text-muted-foreground uppercase">
           Repeats
