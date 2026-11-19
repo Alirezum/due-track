@@ -145,7 +145,7 @@
 
 - [X] T056 [US3] Extend `backend/src/due_track/db/items_repository.py` list-active with optional `category` (case-insensitive exact), `priority`, `recurring` (freq != none / = none), and `q` (escaped LIKE across title and notes) filters combined with AND, over active items only.
 - [X] T057 [US3] Extend GET `/api/items` in `backend/src/due_track/api/routes/items.py` to accept `category`, `priority`, `recurring`, and `q` query parameters, pass them to the repository, and compute buckets/summary from the filtered set.
-- [ ] T058 [P] [US3] Implement `frontend/src/components/FilterBar.tsx` with category-label text input/datalist, priority select, recurrence select, debounced search input, and a clear-all action.
+- [X] T058 [P] [US3] Implement `frontend/src/components/FilterBar.tsx` with category-label text input/datalist, priority select, recurrence select, debounced search input, and a clear-all action.
 - [ ] T059 [US3] Update `frontend/src/hooks/useItems.ts` query keys to include filter state and wire `frontend/src/pages/DashboardPage.tsx` to FilterBar, the no-results state, and the filtered summary.
 - [ ] T060 [US3] Run the US3 quality gates from `specs/001-due-track-v1/plan.md` and the filter tests in `backend/tests/integration/api/test_filters.py` and `frontend/tests/filters.test.tsx`.
 
