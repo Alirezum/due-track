@@ -94,7 +94,7 @@
 - [X] T036 [US1] Implement `frontend/src/components/ItemForm.tsx` with title, notes, due kind (date/datetime), category label, priority, amount dollars converted to integer cents, and recurrence controls for frequency, interval, anchor mode, anchor day, inclusive end date, and remaining count (labeled “occurrences remaining, including this one”); show field-level validation errors and focus the title on open.
 - [X] T037 [US1] Implement `frontend/src/components/ItemCard.tsx` and `frontend/src/components/BucketSection.tsx` to render due date/time, priority, deterministic category badge, amount, recurrence summary, and notes as plain text with `white-space: pre-wrap` and no `dangerouslySetInnerHTML`.
 - [X] T038 [P] [US1] Implement `frontend/src/components/ConfirmDialog.tsx` using the shadcn AlertDialog primitive with explicit confirm/cancel actions, keyboard trapping, and visible focus.
-- [ ] T039 [US1] Implement `frontend/src/pages/DashboardPage.tsx` to render the four buckets and summary from `GET /api/items`, open the create/edit form, and require confirmation before delete.
+- [X] T039 [US1] Implement `frontend/src/pages/DashboardPage.tsx` to render the four buckets and summary from `GET /api/items`, open the create/edit form, and require confirmation before delete.
 - [ ] T040 [US1] Wire the dashboard route in `frontend/src/App.tsx` and verify `npm run build` in `frontend/`.
 - [ ] T041 [US1] Run the US1 quality gates from `specs/001-due-track-v1/plan.md`: `uv run pytest`, `uv run ruff check .`, `uv run ruff format --check .`, and `uv run mypy src` in `backend/`, plus `npm run test:run` and `npm run build` in `frontend/`.
 

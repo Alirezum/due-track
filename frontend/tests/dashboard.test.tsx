@@ -42,7 +42,9 @@ const ITEMS: ItemListResponse = {
         priority: 'critical',
         notes: 'Upload the receipts',
         due_local_date: '2026-11-01',
-        due_at_utc: '2026-11-01T04:59:59.999999Z',
+        due_at_utc: '2026-11-02T04:59:59.999999Z',
+        is_date_only: true,
+        due_local_time: null,
       }),
     ],
     due_today: [
