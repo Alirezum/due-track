@@ -555,7 +555,6 @@ export function DashboardPage() {
                   tone="overdue"
                   items={visibleOverdue}
                   emptyLabel="Nothing overdue"
-                  currencyCode={data.currency_code}
                   onEdit={openEdit}
                   onDelete={setDeletingItem}
                   onComplete={(item) => void handleComplete(item)}
@@ -570,7 +569,6 @@ export function DashboardPage() {
               tone="today"
               items={buckets.due_today}
               emptyLabel="Nothing due today"
-              currencyCode={data.currency_code}
               onEdit={openEdit}
               onDelete={setDeletingItem}
               onComplete={(item) => void handleComplete(item)}
@@ -590,7 +588,6 @@ export function DashboardPage() {
               tone="upcoming"
               items={buckets.upcoming}
               emptyLabel="Nothing in the next seven days"
-              currencyCode={data.currency_code}
               onEdit={openEdit}
               onDelete={setDeletingItem}
               onComplete={(item) => void handleComplete(item)}
@@ -603,7 +600,6 @@ export function DashboardPage() {
               tone="later"
               items={buckets.later}
               emptyLabel="Nothing later"
-              currencyCode={data.currency_code}
               onEdit={openEdit}
               onDelete={setDeletingItem}
               onComplete={(item) => void handleComplete(item)}

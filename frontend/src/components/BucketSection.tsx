@@ -7,7 +7,6 @@ export type BucketSectionProps = {
   title: string
   items: DueItem[]
   emptyLabel: string
-  currencyCode: string
   tone?: 'overdue' | 'today' | 'upcoming' | 'later'
   onEdit: (item: DueItem) => void
   onDelete: (item: DueItem) => void
@@ -28,7 +27,6 @@ export function BucketSection({
   title,
   items,
   emptyLabel,
-  currencyCode,
   tone = 'later',
   onEdit,
   onDelete,
@@ -59,7 +57,6 @@ export function BucketSection({
             <ItemCard
               key={item.id}
               item={item}
-              currencyCode={currencyCode}
               onEdit={onEdit}
               onDelete={onDelete}
               onComplete={onComplete}

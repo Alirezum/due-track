@@ -169,6 +169,49 @@ describe('DashboardPage', () => {
     expect(upcomingCalls.length).toBeGreaterThan(0)
   })
 
+  it('keeps amounts and currency out of the summary and deadline cards', async () => {
+    const user = userEvent.setup()
+    const fetchMock = mockFetch((url) => {
+      if (url.includes('category=Bills')) {
+        const filteredAll: ItemListResponse = {
+          ...ALL_ITEMS,
+          buckets: { overdue: [OVERDUE], due_today: [], upcoming: [RENT], later: [] },
+        }
+        const filteredUpcoming: ItemListResponse = {
+          ...UPCOMING_ITEMS,
+          buckets: { overdue: [], due_today: [], upcoming: [RENT], later: [] },
+        }
+        return itemsFor(url, filteredAll, filteredUpcoming)
+      }
+      return itemsFor(url)
+    })
+    renderDashboard()
+
+    expect(await screen.findByText('Call the plumber')).toBeInTheDocument()
+    const summary = screen.getByRole('region', { name: 'Dashboard summary' })
+    expect(summary).not.toHaveTextContent('$')
+    expect(summary).not.toHaveTextContent('USD')
+    expect(screen.queryByText('$1,200.00')).not.toBeInTheDocument()
+    expect(screen.queryByText('Upcoming total')).not.toBeInTheDocument()
+
+    expect(summaryValue('Next 7 days')).toBe(String(UPCOMING_ITEMS.buckets.upcoming.length))
+    expect(summaryValue('Next 7 days')).toBe('1')
+    expect(summaryValue('Due today')).toBe('1')
+    expect(summaryValue('Overdue')).toBe('1')
+
+    const cards = screen.getAllByRole('article').map((card) => card.getAttribute('aria-label'))
+    expect(cards).toEqual(['Call the plumber', 'Rent'])
+
+    await user.type(screen.getByLabelText('Category'), 'Bills')
+    await waitFor(() =>
+      expect(listRequests(fetchMock).some((url) => url.includes('category=Bills'))).toBe(true),
+    )
+    expect(await screen.findByText('Rent')).toBeInTheDocument()
+    await waitFor(() =>
+      expect(screen.queryByText('Call the plumber')).not.toBeInTheDocument(),
+    )
+  })
+
   it('reveals and hides overdue deadlines with a focus handoff', async () => {
     const user = userEvent.setup()
     renderDashboard()

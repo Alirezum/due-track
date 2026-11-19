@@ -3,7 +3,7 @@ import type { DueItem } from '@/api/types'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { categoryBadgeClass, categoryBadgeTone } from '@/lib/categories'
-import { formatAmount, formatDue, formatLocalDate } from '@/lib/format'
+import { formatDue, formatLocalDate } from '@/lib/format'
 import { recurrenceSummary } from '@/lib/recurrence'
 import { cn } from '@/lib/utils'
 
@@ -23,7 +23,6 @@ const PRIORITY_LABEL: Record<DueItem['priority'], string> = {
 
 export type ItemCardProps = {
   item: DueItem
-  currencyCode: string
   onEdit: (item: DueItem) => void
   onDelete: (item: DueItem) => void
   onComplete?: (item: DueItem) => void
@@ -33,14 +32,12 @@ export type ItemCardProps = {
 
 export function ItemCard({
   item,
-  currencyCode,
   onEdit,
   onDelete,
   onComplete,
   isCompleting = false,
   isActive = false,
 }: ItemCardProps) {
-  const amount = formatAmount(item.amount_cents, currencyCode)
   const categoryClass = categoryBadgeClass(item.category)
   const tone = categoryBadgeTone(item.category)
   const recurrence = recurrenceSummary(item)
@@ -75,7 +72,7 @@ export function ItemCard({
         </span>
       </div>
 
-      {item.category || amount || recurrence ? (
+      {item.category || recurrence ? (
         <div className="flex flex-wrap items-center gap-2 text-xs">
           {item.category && categoryClass && tone !== null ? (
             <Badge
@@ -85,9 +82,6 @@ export function ItemCard({
             >
               {item.category}
             </Badge>
-          ) : null}
-          {amount ? (
-            <span className="font-medium tabular-nums text-foreground">{amount}</span>
           ) : null}
           {recurrence ? (
             <span className="inline-flex items-center gap-1 text-muted-foreground">
