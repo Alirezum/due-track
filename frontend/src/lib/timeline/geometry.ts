@@ -36,6 +36,9 @@ const TICK_LADDER: readonly TickInterval[] = [
   { unit: 'year', amount: 1, approxMs: YEAR_MS },
   { unit: 'year', amount: 2, approxMs: 2 * YEAR_MS },
   { unit: 'year', amount: 5, approxMs: 5 * YEAR_MS },
+  { unit: 'year', amount: 10, approxMs: 10 * YEAR_MS },
+  { unit: 'year', amount: 25, approxMs: 25 * YEAR_MS },
+  { unit: 'year', amount: 50, approxMs: 50 * YEAR_MS },
 ]
 
 export function clampRatio(ratio: number): number {
@@ -108,24 +111,45 @@ function zoneOffsetAt(ms: number, timezone: string): number {
   return asUtc - Math.floor(ms / 1000) * 1000
 }
 
-function localMidnightMs(ms: number, timezone: string): number {
-  const parts = localPartsAt(ms, timezone)
-  const guess = Date.UTC(
-    partNumber(parts, 'year'),
-    partNumber(parts, 'month') - 1,
-    partNumber(parts, 'day'),
-  )
-  return guess - zoneOffsetAt(guess, timezone)
+function localDateToUtcMs(
+  year: number,
+  month: number,
+  day: number,
+  timezone: string,
+): number {
+  const guess = Date.UTC(year, month - 1, day)
+  let offset = zoneOffsetAt(guess, timezone)
+  let result = guess - offset
+  const refined = zoneOffsetAt(result, timezone)
+  if (refined !== offset) {
+    offset = refined
+    result = guess - offset
+  }
+  return result
 }
 
-function addMonthsUtc(ms: number, months: number): number {
-  const date = new Date(ms)
-  const targetMonth = date.getUTCMonth() + months
-  return Date.UTC(
-    date.getUTCFullYear() + Math.floor(targetMonth / 12),
-    ((targetMonth % 12) + 12) % 12,
-    date.getUTCDate(),
+function localMidnightMs(ms: number, timezone: string): number {
+  const parts = localPartsAt(ms, timezone)
+  return localDateToUtcMs(
+    partNumber(parts, 'year'),
+    partNumber(parts, 'month'),
+    partNumber(parts, 'day'),
+    timezone,
   )
+}
+
+function localDateParts(ms: number, timezone: string): { year: number; month: number } {
+  const parts = localPartsAt(ms, timezone)
+  return { year: partNumber(parts, 'year'), month: partNumber(parts, 'month') }
+}
+
+function addMonthsLocal(
+  year: number,
+  month: number,
+  months: number,
+): { year: number; month: number } {
+  const zeroBased = year * 12 + (month - 1) + months
+  return { year: Math.floor(zeroBased / 12), month: (((zeroBased % 12) + 12) % 12) + 1 }
 }
 
 export function buildTicks(
@@ -159,23 +183,42 @@ export function buildTicks(
     const stepDays = interval.unit === 'week' ? interval.amount * 7 : interval.amount
     let tick = localMidnightMs(startMs, timezone)
     while (tick < startMs) {
-      tick = localMidnightMs(tick + DAY_MS, timezone)
+      const parts = localPartsAt(tick + DAY_MS, timezone)
+      tick = localDateToUtcMs(
+        partNumber(parts, 'year'),
+        partNumber(parts, 'month'),
+        partNumber(parts, 'day'),
+        timezone,
+      )
     }
     while (tick <= endMs && ticks.length < guard) {
       ticks.push(tick)
-      tick = localMidnightMs(tick + stepDays * DAY_MS + HOUR_MS, timezone)
+      const parts = localPartsAt(tick + stepDays * DAY_MS, timezone)
+      tick = localDateToUtcMs(
+        partNumber(parts, 'year'),
+        partNumber(parts, 'month'),
+        partNumber(parts, 'day'),
+        timezone,
+      )
     }
     return ticks
   }
 
   const stepMonths = interval.unit === 'year' ? interval.amount * 12 : interval.amount
-  let tick = localMidnightMs(startMs, timezone)
+  let { year, month } = localDateParts(startMs, timezone)
+  let tick = localDateToUtcMs(year, month, 1, timezone)
   while (tick < startMs) {
-    tick = addMonthsUtc(tick, 1)
+    const advanced = addMonthsLocal(year, month, 1)
+    year = advanced.year
+    month = advanced.month
+    tick = localDateToUtcMs(year, month, 1, timezone)
   }
   while (tick <= endMs && ticks.length < guard) {
     ticks.push(tick)
-    tick = addMonthsUtc(tick, stepMonths)
+    const advanced = addMonthsLocal(year, month, stepMonths)
+    year = advanced.year
+    month = advanced.month
+    tick = localDateToUtcMs(year, month, 1, timezone)
   }
   return ticks
 }
@@ -211,46 +254,63 @@ export function clusterMarkers(
   markerWidth = MARKER_WIDTH_PX,
 ): MarkerGroup[] {
   const anchors: MarkerAnchor[] = entries
-    .map((entry) => ({
-      entry,
-      dueMs: Date.parse(entry.item.due_at_utc),
-      x: positionFor(Date.parse(entry.item.due_at_utc), window.startMs, window.endMs) * width,
-    }))
+    .map((entry) => {
+      const dueMs = Date.parse(entry.item.due_at_utc)
+      return {
+        entry,
+        dueMs,
+        x: positionFor(dueMs, window.startMs, window.endMs) * width,
+      }
+    })
     .filter((anchor) => Number.isFinite(anchor.dueMs))
     .sort((left, right) => left.dueMs - right.dueMs || left.entry.item.id - right.entry.item.id)
 
   const threshold = markerWidth + MARKER_GAP_PX
   const groups: MarkerGroup[] = []
 
+  let current: {
+    entries: TimelineEntry[]
+    firstX: number
+    lastX: number
+    sumX: number
+    dueMs: number
+    key: string
+  } | null = null
+
+  function flush() {
+    if (!current) {
+      return
+    }
+    const items = current.entries
+    groups.push({
+      kind: items.length === 1 ? 'marker' : 'cluster',
+      key: current.key,
+      x: items.length === 1 ? current.firstX : current.sumX / items.length,
+      dueMs: current.dueMs,
+      entries: items as [TimelineEntry] | TimelineEntry[],
+    } as MarkerGroup)
+    current = null
+  }
+
   for (const anchor of anchors) {
-    const previous = groups[groups.length - 1]
-    const previousX = previous ? previous.x : Number.NEGATIVE_INFINITY
-    if (previous && Math.abs(anchor.x - previousX) < threshold) {
-      const entriesInGroup = [...previous.entries, anchor.entry]
-      const x =
-        entriesInGroup.reduce(
-          (sum, entry) =>
-            sum +
-            positionFor(Date.parse(entry.item.due_at_utc), window.startMs, window.endMs) * width,
-          0,
-        ) / entriesInGroup.length
-      groups[groups.length - 1] = {
-        kind: 'cluster',
-        key: `cluster-${previous.key}`,
-        x,
-        dueMs: previous.dueMs,
-        entries: entriesInGroup,
-      }
+    if (current && Math.abs(anchor.x - current.lastX) < threshold) {
+      current.entries.push(anchor.entry)
+      current.sumX += anchor.x
+      current.lastX = anchor.x
+      current.key = `cluster-${current.entries[0].item.id}-${current.entries.length}`
     } else {
-      groups.push({
-        kind: 'marker',
-        key: `marker-${anchor.entry.item.id}`,
-        x: anchor.x,
-        dueMs: anchor.dueMs,
+      flush()
+      current = {
         entries: [anchor.entry],
-      })
+        firstX: anchor.x,
+        lastX: anchor.x,
+        sumX: anchor.x,
+        dueMs: anchor.dueMs,
+        key: `marker-${anchor.entry.item.id}`,
+      }
     }
   }
+  flush()
 
   return groups
 }

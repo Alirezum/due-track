@@ -35,6 +35,7 @@ export function TimelineAxis({ window, width, timezone, liveNowMs }: TimelineAxi
             <span className="absolute inset-y-0 left-0 w-px bg-timeline-grid" />
             <span className="absolute top-1/2 left-0 h-2 w-px -translate-y-1/2 bg-timeline-tick/70" />
             <span
+              data-timeline-tick=""
               className={cn(
                 'absolute top-[calc(50%+0.75rem)] left-0 -translate-x-1/2 font-sans text-[0.6875rem] leading-none font-semibold tracking-[0.08em] whitespace-nowrap text-timeline-tick uppercase tabular-nums',
                 interval.unit === 'minute' || interval.unit === 'hour' ? 'text-[0.625rem]' : '',

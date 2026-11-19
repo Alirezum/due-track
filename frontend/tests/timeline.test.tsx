@@ -11,6 +11,7 @@ import { TimelinePage } from '@/pages/TimelinePage'
 import {
   FIXED_REFERENCE_MS,
   makeDenseTimeline,
+  makeThousandEntryTimeline,
   makeTimelineEntry,
   makeTimelineResponse,
 } from './timelineFixtures'
@@ -70,10 +71,14 @@ function chronologicalList(): HTMLElement {
   return screen.getByRole('list', { name: 'Deadlines in chronological order' })
 }
 
-function markerTitles(): string[] {
-  return within(chronologicalList())
-    .getAllByRole('button')
-    .map((button) => button.getAttribute('aria-label')?.split(',')[0] ?? '')
+function markerElements(list: HTMLElement): Element[] {
+  return Array.from(list.querySelectorAll('[data-timeline-marker]'))
+}
+
+function markerTitles(list: HTMLElement): string[] {
+  return markerElements(list).map(
+    (marker) => marker.getAttribute('aria-label')?.split(',')[0] ?? '',
+  )
 }
 
 beforeEach(() => {
@@ -82,6 +87,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers()
+  vi.restoreAllMocks()
   vi.unstubAllGlobals()
 })
 
@@ -117,14 +123,17 @@ describe('TimelinePage US1 baseline', () => {
 
   it('renders every entry exactly once in chronological order with due moments and countdowns', async () => {
     const response = makeDenseTimeline()
-    renderTimeline(response)
+    const visible = response.entries.filter(
+      (entry) => Date.parse(entry.item.due_at_utc) <= FIXED_REFERENCE_MS + 30 * 24 * 3_600_000,
+    )
+    renderTimeline(makeTimelineResponse(visible))
 
     expect(await screen.findByRole('heading', { name: 'Time, laid bare.' })).toBeInTheDocument()
 
     const list = await screen.findByRole('list', { name: 'Deadlines in chronological order' })
-    expect(markerTitles()).toEqual(response.entries.map((entry) => entry.item.title))
+    expect(markerTitles(list)).toEqual(visible.map((entry) => entry.item.title))
 
-    for (const entry of response.entries) {
+    for (const entry of visible) {
       expect(within(list).getAllByText(entry.item.title)).toHaveLength(1)
     }
 
@@ -150,17 +159,20 @@ describe('TimelinePage US1 baseline', () => {
     const nowDivider = screen.getByTestId('timeline-now-divider')
     expect(nowDivider).toHaveAttribute('aria-label', 'Now')
 
-    const buttons = within(list).getAllByRole('button')
     const overdueCount = response.entries.filter((entry) => entry.urgency === 'overdue').length
-    for (const button of buttons.slice(0, overdueCount)) {
-      expect(button.getAttribute('aria-label')).toMatch(/Overdue/)
-    }
-    for (const button of buttons.slice(overdueCount)) {
-      expect(button.getAttribute('aria-label')).not.toMatch(/Overdue/)
-    }
-
-    const dividerIndex = Array.from(list.querySelectorAll('li')).indexOf(nowDivider)
+    const ordered = Array.from(
+      list.querySelectorAll('[data-timeline-marker], [data-testid="timeline-now-divider"]'),
+    )
+    const dividerIndex = ordered.indexOf(nowDivider)
     expect(dividerIndex).toBe(overdueCount)
+
+    const markers = markerElements(list)
+    for (const marker of markers.slice(0, overdueCount)) {
+      expect(marker.getAttribute('aria-label')).toMatch(/Overdue/)
+    }
+    for (const marker of markers.slice(overdueCount)) {
+      expect(marker.getAttribute('aria-label')).not.toMatch(/Overdue/)
+    }
   })
 
   it('keeps the empty state and opens the create form from it', async () => {
@@ -272,5 +284,225 @@ describe('TimelinePage US1 baseline', () => {
     })
     expect(await within(await screen.findByRole('list', { name: 'Deadlines in chronological order' })).findByText('Fresh ledger entry')).toBeInTheDocument()
     expect(timelineCalls).toBeGreaterThanOrEqual(2)
+  })
+})
+
+function mockWideViewport(width = 1200) {
+  vi.stubGlobal(
+    'matchMedia',
+    vi.fn(
+      (query: string) =>
+        ({
+          matches: query.includes('min-width: 1024px'),
+          media: query,
+          onchange: null,
+          addEventListener: vi.fn(),
+          removeEventListener: vi.fn(),
+          addListener: vi.fn(),
+          removeListener: vi.fn(),
+          dispatchEvent: vi.fn(),
+        }) as unknown as MediaQueryList,
+    ),
+  )
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+    width,
+    height: 480,
+    top: 0,
+    left: 0,
+    right: width,
+    bottom: 480,
+    x: 0,
+    y: 0,
+    toJSON: () => ({}),
+  } as DOMRect)
+}
+
+function filteredTimeline(url: string): Response {
+  const parsed = new URL(url, 'http://localhost')
+  let entries = makeDenseTimeline().entries
+  const category = parsed.searchParams.get('category')
+  const priority = parsed.searchParams.get('priority')
+  const recurring = parsed.searchParams.get('recurring')
+  const q = parsed.searchParams.get('q')?.toLowerCase()
+
+  if (category) {
+    entries = entries.filter(
+      (entry) => entry.item.category?.toLowerCase() === category.toLowerCase(),
+    )
+  }
+  if (priority) {
+    entries = entries.filter((entry) => entry.item.priority === priority)
+  }
+  if (recurring) {
+    const wantsRecurring = recurring === 'true'
+    entries = entries.filter((entry) => entry.item.is_recurring === wantsRecurring)
+  }
+  if (q) {
+    entries = entries.filter(
+      (entry) =>
+        entry.item.title.toLowerCase().includes(q) || entry.item.notes.toLowerCase().includes(q),
+    )
+  }
+
+  return jsonResponse(makeTimelineResponse(entries))
+}
+
+function tickLabels(): string[] {
+  return Array.from(document.querySelectorAll('[data-timeline-tick]')).map(
+    (tick) => tick.textContent ?? '',
+  )
+}
+
+describe('TimelinePage US2 horizons, edges, clusters, filters, and width', () => {
+  it('offers six horizons, defaults to 30d, and updates axis labels', async () => {
+    mockWideViewport()
+    const user = userEvent.setup()
+    renderTimeline(makeDenseTimeline())
+
+    await screen.findByTestId('timeline-now')
+    for (const label of ['24h', '7d', '30d', '90d', '1y', 'All']) {
+      expect(screen.getByRole('button', { name: label })).toBeInTheDocument()
+    }
+    expect(screen.getByRole('button', { name: '30d' })).toHaveAttribute('aria-pressed', 'true')
+
+    const before = tickLabels()
+    expect(before.length).toBeGreaterThanOrEqual(3)
+    await user.click(screen.getByRole('button', { name: '7d' }))
+
+    expect(screen.getByRole('button', { name: '7d' })).toHaveAttribute('aria-pressed', 'true')
+    await waitFor(() => expect(tickLabels()).not.toEqual(before))
+    expect(screen.getByTestId('timeline-now')).toBeInTheDocument()
+  })
+
+  it('reveals hidden deadlines from edge summaries and resets the span', async () => {
+    const user = userEvent.setup()
+    renderTimeline(makeDenseTimeline())
+
+    await screen.findByTestId('timeline-now-divider')
+    await user.click(screen.getByRole('button', { name: '24h' }))
+
+    const leftSummary = await screen.findByRole('button', {
+      name: 'Show 2 earlier deadlines',
+    })
+    expect(
+      screen.getByRole('button', { name: /Show \d+ later deadlines/ }),
+    ).toBeInTheDocument()
+
+    await user.click(leftSummary)
+    expect(
+      screen.queryByRole('button', { name: 'Show 2 earlier deadlines' }),
+    ).not.toBeInTheDocument()
+    expect(await screen.findByText('Overdue electricity')).toBeInTheDocument()
+    expect(screen.getByTestId('timeline-now-divider')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Reset span' }))
+    expect(
+      await screen.findByRole('button', { name: 'Show 2 earlier deadlines' }),
+    ).toBeInTheDocument()
+  })
+
+  it('clusters same-instant deadlines in place and restores focus on Escape', async () => {
+    mockWideViewport()
+    const user = userEvent.setup()
+    const clusterEntries = makeDenseTimeline().entries.filter(
+      (entry) => entry.item.id >= 100,
+    )
+    renderTimeline(makeTimelineResponse(clusterEntries))
+
+    const cluster = await screen.findByRole('button', { name: '20 deadlines here' })
+    expect(cluster).toHaveAttribute('aria-expanded', 'false')
+
+    await user.click(cluster)
+    expect(cluster).toHaveAttribute('aria-expanded', 'true')
+    const panel = screen.getByRole('group', { name: '20 deadlines at this moment' })
+    expect(within(panel).getAllByRole('button')).toHaveLength(20)
+
+    await user.keyboard('{Escape}')
+    expect(cluster).toHaveAttribute('aria-expanded', 'false')
+    expect(cluster).toHaveFocus()
+    expect(
+      screen.queryByRole('group', { name: '20 deadlines at this moment' }),
+    ).not.toBeInTheDocument()
+  })
+
+  it('applies category, priority, recurrence, and search with AND semantics', async () => {
+    const user = userEvent.setup()
+    renderTimeline(filteredTimeline)
+
+    await screen.findByRole('list', { name: 'Deadlines in chronological order' })
+    expect(markerTitles(chronologicalList())).toHaveLength(29)
+
+    await user.type(screen.getByLabelText('Category'), 'Bills')
+    await waitFor(
+      () => {
+        expect(markerTitles(chronologicalList())).toEqual([
+          'Overdue electricity',
+          'Quarterly tax estimate',
+        ])
+      },
+      { timeout: 3000 },
+    )
+
+    await user.selectOptions(screen.getByLabelText('Priority'), 'critical')
+    await waitFor(() =>
+      expect(markerTitles(chronologicalList())).toEqual(['Quarterly tax estimate']),
+    )
+
+    await user.type(screen.getByLabelText('Search'), 'tax')
+    await waitFor(
+      () => expect(markerTitles(chronologicalList())).toEqual(['Quarterly tax estimate']),
+      { timeout: 3000 },
+    )
+
+    await user.selectOptions(screen.getByLabelText('Repeats'), 'true')
+    expect(
+      await screen.findByRole('heading', { name: 'No deadlines match these filters.' }),
+    ).toBeInTheDocument()
+
+    const filterRegion = screen.getByRole('region', { name: 'Filter deadlines' })
+    await user.click(within(filterRegion).getByRole('button', { name: 'Clear filters' }))
+    await waitFor(() => expect(markerTitles(chronologicalList())).toHaveLength(29), {
+      timeout: 3000,
+    })
+  })
+
+  it('preserves the selected deadline when the horizon changes', async () => {
+    const user = userEvent.setup()
+    renderTimeline(makeDenseTimeline())
+
+    const marker = await screen.findByRole('button', { name: /Overdue electricity/ })
+    await user.click(marker)
+    expect(marker).toHaveAttribute('aria-current', 'true')
+
+    await user.click(screen.getByRole('button', { name: '7d' }))
+    const again = await screen.findByRole('button', { name: /Overdue electricity/ })
+    expect(again).toHaveAttribute('aria-current', 'true')
+  })
+
+  it('switches between the vertical ledger and the horizontal axis', async () => {
+    const first = renderTimeline(makeDenseTimeline())
+    expect(await screen.findByText('Chronological ledger')).toBeInTheDocument()
+    expect(screen.queryByTestId('timeline-now')).not.toBeInTheDocument()
+    first.unmount()
+
+    mockWideViewport()
+    renderTimeline(makeDenseTimeline())
+    expect(await screen.findByTestId('timeline-now')).toBeInTheDocument()
+    expect(screen.queryByText('Chronological ledger')).not.toBeInTheDocument()
+  })
+
+  it('renders 1,000 deadlines within budget with a bounded marker count', async () => {
+    mockWideViewport(1280)
+    const started = performance.now()
+    renderTimeline(makeThousandEntryTimeline())
+
+    await screen.findByRole('list', { name: 'Deadlines in chronological order' })
+    await screen.findByTestId('timeline-now')
+    const elapsed = performance.now() - started
+
+    const rendered = document.querySelectorAll('[data-timeline-marker], [data-timeline-cluster]')
+    expect(rendered.length).toBeGreaterThan(0)
+    expect(rendered.length).toBeLessThan(1000)
+    expect(elapsed).toBeLessThan(2000)
   })
 })

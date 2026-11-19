@@ -2,6 +2,7 @@ import type { CSSProperties } from 'react'
 import type { TimelineEntry } from '@/api/types'
 import { formatCountdown } from '@/lib/timeline/countdown'
 import { formatTimelineDue } from '@/lib/timeline/format'
+import { entryAriaLabel } from '@/lib/timeline/labels'
 import {
   PRIORITY_LABEL,
   PRIORITY_SHORT_LABEL,
@@ -61,14 +62,6 @@ function nodeTone(entry: TimelineEntry): string {
     default:
       return ''
   }
-}
-
-function markerAriaLabel(entry: TimelineEntry, liveNowMs: number, timezone: string): string {
-  const remaining = Math.floor((Date.parse(entry.item.due_at_utc) - liveNowMs) / 1000)
-  const countdown = formatCountdown(remaining, entry.urgency)
-  const due = formatTimelineDue(entry.item.due_at_utc, timezone, entry.item.is_date_only)
-  const category = entry.item.category ? `, ${entry.item.category}` : ''
-  return `${entry.item.title}, ${PRIORITY_LABEL[entry.item.priority]} priority, due ${due}, ${countdown}${category}`
 }
 
 export function TimelineMarker({
@@ -152,7 +145,7 @@ export function TimelineMarker({
 
   if (orientation === 'vertical') {
     return (
-      <li className="relative pl-7">
+      <li className="relative pl-7 [content-visibility:auto]">
         <span
           aria-hidden="true"
           className={cn(
@@ -165,7 +158,9 @@ export function TimelineMarker({
           type="button"
           onClick={() => onSelect?.(entry)}
           aria-current={selected ? 'true' : undefined}
-          aria-label={markerAriaLabel(entry, liveNowMs, timezone)}
+          aria-label={entryAriaLabel(entry, liveNowMs, timezone)}
+          data-timeline-marker=""
+          data-entry-id={entry.item.id}
           className={cn(
             'group relative -ml-7 grid w-full grid-cols-[0.625rem_minmax(0,1fr)] items-start gap-3 rounded-[4px] py-2 pr-2 pl-0 text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
           )}
@@ -223,11 +218,13 @@ export function TimelineMarker({
         type="button"
         onClick={() => onSelect?.(entry)}
         aria-current={selected ? 'true' : undefined}
-        aria-label={markerAriaLabel(entry, liveNowMs, timezone)}
+        aria-label={entryAriaLabel(entry, liveNowMs, timezone)}
         className="group absolute top-1/2 left-0 flex h-10 w-10 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
         data-side={side}
         data-urgency={entry.urgency}
         data-date-only={entry.item.is_date_only ? 'true' : undefined}
+        data-timeline-marker=""
+        data-entry-id={entry.item.id}
       >
         <span
           aria-hidden="true"
