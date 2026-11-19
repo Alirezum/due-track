@@ -242,3 +242,19 @@ class ItemListResponse(StrictModel):
     summary: DashboardSummary
     currency_code: str
     timezone: str
+
+
+class CompletionLog(StrictModel):
+    id: int
+    item_id: int | None
+    scheduled_due_at_utc: datetime
+    completed_at_utc: datetime
+    previous_state: DueItem
+    spawned_next_occurrence: bool
+    next_due_at_utc: datetime | None
+    can_undo: bool
+
+
+class CompleteResponse(StrictModel):
+    log: CompletionLog
+    item: DueItem | None
