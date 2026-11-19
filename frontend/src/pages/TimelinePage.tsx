@@ -178,7 +178,9 @@ export function TimelinePage() {
     setPendingRevealFocus(true)
     setShowOverdue(true)
     setRevealedEdges(resetReveals())
-    setAnnouncement('Showing overdue deadlines.')
+    setAnnouncement(
+      `Showing ${overdueCount} overdue ${overdueCount === 1 ? 'deadline' : 'deadlines'}.`,
+    )
   }
 
   function hideOverdue() {
@@ -186,7 +188,7 @@ export function TimelinePage() {
     setPendingHideFocus(true)
     setShowOverdue(false)
     setRevealedEdges(resetReveals())
-    setAnnouncement('Showing upcoming deadlines only.')
+    setAnnouncement('Hiding overdue deadlines. Showing upcoming only.')
   }
 
   function selectEntry(entry: TimelineEntry, focus: boolean) {
@@ -272,8 +274,8 @@ export function TimelinePage() {
       focusEntryWhenReady(target.item.id)
       setAnnouncement(
         pendingRevealId !== null
-          ? `Showing overdue deadlines. Selected ${target.item.title}.`
-          : 'Showing overdue deadlines.',
+          ? `Showing ${overdueCount} overdue ${overdueCount === 1 ? 'deadline' : 'deadlines'}. Selected ${target.item.title}.`
+          : `Showing ${overdueCount} overdue ${overdueCount === 1 ? 'deadline' : 'deadlines'}.`,
       )
     } else {
       document
@@ -282,7 +284,14 @@ export function TimelinePage() {
     }
     setPendingRevealFocus(false)
     setPendingRevealId(null)
-  }, [pendingRevealFocus, pendingRevealId, showOverdue, timeline.isPlaceholderData, visibleEntries])
+  }, [
+    overdueCount,
+    pendingRevealFocus,
+    pendingRevealId,
+    showOverdue,
+    timeline.isPlaceholderData,
+    visibleEntries,
+  ])
 
   useEffect(() => {
     if (!pendingHideFocus || showOverdue) {

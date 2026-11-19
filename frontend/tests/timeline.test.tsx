@@ -67,6 +67,22 @@ function renderTimeline(entry: TimelineResponse | Handler) {
   return { ...render(<TimelinePage />, { wrapper: Wrapper }), fetchMock, queryClient }
 }
 
+function renderApp(initialEntries: string[] = ['/timeline']) {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  })
+
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <ThemeProvider>
+        <MemoryRouter initialEntries={initialEntries}>
+          <App />
+        </MemoryRouter>
+      </ThemeProvider>
+    </QueryClientProvider>,
+  )
+}
+
 function chronologicalList(): HTMLElement {
   return screen.getByRole('list', { name: 'Deadlines in chronological order' })
 }
@@ -1256,5 +1272,221 @@ describe('TimelinePage US3 details, actions, and keyboard', () => {
     const beta = await screen.findByRole('button', { name: /Keyboard beta/ })
     await waitFor(() => expect(beta).toHaveFocus())
     expect(beta).toHaveAttribute('aria-current', 'true')
+  })
+
+  it('moves a revealed overdue deadline into the upcoming view after editing it forward', async () => {
+    const user = userEvent.setup()
+    const overdue = entryAt(200, 'Overdue edit', -2 * DAY, { amountCents: 120_000 })
+    const future = entryAt(201, 'Future keep', 2 * DAY)
+    const revised = entryAt(200, 'Overdue edit', 3 * DAY, { amountCents: 120_000 })
+    let moved = false
+
+    const { fetchMock } = renderTimeline((url, init) => {
+      if (url === '/api/items/200' && init.method === 'PATCH') {
+        moved = true
+        return jsonResponse(revised.item)
+      }
+      if (url.startsWith('/api/timeline')) {
+        const all = makeTimelineResponse(moved ? [future, revised] : [overdue, future])
+        const upcoming = makeTimelineResponse(moved ? [future, revised] : [future], {
+          overdue_count: moved ? 0 : 1,
+        })
+        return jsonResponse(url.includes('scope=upcoming') ? upcoming : all)
+      }
+      return jsonResponse(EMPTY_ITEMS)
+    })
+
+    await screen.findByTestId('timeline-now-divider')
+    await user.click(screen.getByRole('button', { name: 'Show 1 overdue deadline' }))
+    await user.click(await screen.findByRole('button', { name: /Overdue edit/ }))
+    const detail = await screen.findByRole('dialog', { name: 'Deadline details' })
+    await user.click(within(detail).getByRole('button', { name: 'Edit Overdue edit' }))
+
+    const edit = await screen.findByRole('dialog', { name: 'Edit deadline' })
+    expect(within(edit).getByLabelText('Amount')).toHaveValue('1200.00')
+    await user.clear(within(edit).getByLabelText('Date'))
+    await user.type(within(edit).getByLabelText('Date'), revised.item.due_local_date)
+    await user.click(within(edit).getByRole('button', { name: 'Save changes' }))
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/items/200',
+        expect.objectContaining({ method: 'PATCH' }),
+      ),
+    )
+    const stillOpen = await screen.findByRole('dialog', { name: 'Deadline details' })
+    expect(within(stillOpen).getByText('Overdue edit')).toBeInTheDocument()
+    await user.keyboard('{Escape}')
+    expect(
+      await within(chronologicalList()).findByRole('button', { name: /Overdue edit/ }),
+    ).toBeInTheDocument()
+    expect(screen.getAllByText('Nothing overdue').length).toBeGreaterThan(0)
+  })
+
+  it('completes and deletes revealed overdue deadlines with updated counts', async () => {
+    const user = userEvent.setup()
+    const completeMe = entryAt(210, 'Overdue complete', -3 * HOUR)
+    const deleteMe = entryAt(211, 'Overdue delete', -2 * HOUR)
+    const future = entryAt(212, 'Future keep', 2 * HOUR)
+    let completed = false
+    let deleted = false
+
+    const { fetchMock } = renderTimeline((url, init) => {
+      if (url === '/api/items/210/complete' && init.method === 'POST') {
+        completed = true
+        return jsonResponse({ log: { id: 1 }, item: null })
+      }
+      if (url === '/api/items/211' && init.method === 'DELETE') {
+        deleted = true
+        return new Response(null, { status: 204 })
+      }
+      if (url.startsWith('/api/timeline')) {
+        const overdue = [completeMe, deleteMe].filter(
+          (entry) => !(completed && entry.item.id === 210) && !(deleted && entry.item.id === 211),
+        )
+        const all = makeTimelineResponse([...overdue, future])
+        const upcoming = makeTimelineResponse([future], { overdue_count: overdue.length })
+        return jsonResponse(url.includes('scope=upcoming') ? upcoming : all)
+      }
+      return jsonResponse(EMPTY_ITEMS)
+    })
+
+    await screen.findByTestId('timeline-now-divider')
+    await user.click(screen.getByRole('button', { name: 'Show 2 overdue deadlines' }))
+
+    await user.click(await screen.findByRole('button', { name: /Overdue complete/ }))
+    let detail = await screen.findByRole('dialog', { name: 'Deadline details' })
+    await user.click(within(detail).getByRole('button', { name: 'Complete Overdue complete' }))
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/items/210/complete',
+        expect.objectContaining({ method: 'POST' }),
+      ),
+    )
+    expect(await screen.findByText('Completed Overdue complete.')).toBeInTheDocument()
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /Overdue complete/ })).not.toBeInTheDocument(),
+    )
+    expect(screen.getByRole('button', { name: 'Hide 1 overdue deadline' })).toBeInTheDocument()
+
+    await user.click(await screen.findByRole('button', { name: /Overdue delete/ }))
+    detail = await screen.findByRole('dialog', { name: 'Deadline details' })
+    await user.click(within(detail).getByRole('button', { name: 'Delete Overdue delete' }))
+    const confirm = await screen.findByRole('alertdialog', { name: 'Delete deadline?' })
+    await user.click(within(confirm).getByRole('button', { name: 'Delete deadline' }))
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/items/211',
+        expect.objectContaining({ method: 'DELETE' }),
+      ),
+    )
+    expect(await screen.findByText('Deleted Overdue delete.')).toBeInTheDocument()
+    expect(screen.getAllByText('Nothing overdue').length).toBeGreaterThan(0)
+  })
+
+  it('records a revealed overdue completion in History and resets the reveal on navigation', async () => {
+    const user = userEvent.setup()
+    const overdue = entryAt(220, 'Overdue history', -2 * HOUR)
+    const future = entryAt(221, 'Future history', 2 * HOUR)
+    const historyEntry = {
+      id: 88,
+      item_id: overdue.item.id,
+      scheduled_due_at_utc: overdue.item.due_at_utc,
+      completed_at_utc: '2026-11-05T12:00:00Z',
+      previous_state: overdue.item,
+      spawned_next_occurrence: false,
+      next_due_at_utc: null,
+      can_undo: true,
+    }
+    let completed = false
+
+    mockFetch((url, init) => {
+      if (url === '/api/items/220/complete' && init.method === 'POST') {
+        completed = true
+        return jsonResponse({ log: historyEntry, item: null })
+      }
+      if (url.startsWith('/api/history')) {
+        return jsonResponse({
+          entries: completed ? [historyEntry] : [],
+          total: completed ? 1 : 0,
+        })
+      }
+      if (url.startsWith('/api/timeline')) {
+        const all = makeTimelineResponse(completed ? [future] : [overdue, future], {
+          overdue_count: completed ? 0 : 1,
+        })
+        const upcoming = makeTimelineResponse([future], {
+          overdue_count: completed ? 0 : 1,
+        })
+        return jsonResponse(url.includes('scope=upcoming') ? upcoming : all)
+      }
+      if (url.startsWith('/api/items')) {
+        return jsonResponse(EMPTY_ITEMS)
+      }
+      return jsonResponse({ detail: 'not found' }, 404)
+    })
+
+    renderApp(['/timeline'])
+    await screen.findByTestId('timeline-now-divider')
+    await user.click(screen.getByRole('button', { name: 'Show 1 overdue deadline' }))
+    await user.click(await screen.findByRole('button', { name: /Overdue history/ }))
+    const detail = await screen.findByRole('dialog', { name: 'Deadline details' })
+    await user.click(within(detail).getByRole('button', { name: 'Complete Overdue history' }))
+    expect(await screen.findByText('Completed Overdue history.')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('link', { name: 'History' }))
+    const list = await screen.findByRole('list', { name: 'Completion history' })
+    expect(within(list).getByRole('heading', { name: 'Overdue history' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('link', { name: 'Timeline' }))
+    await screen.findByTestId('timeline-now-divider')
+    expect(
+      screen.queryByRole('button', { name: /Overdue history/ }),
+    ).not.toBeInTheDocument()
+    expect(screen.getByText('Nothing overdue')).toBeInTheDocument()
+  })
+
+  it('operates the overdue indicator from the keyboard and announces state changes', async () => {
+    const user = userEvent.setup()
+    renderTimeline(scopedTimelineHandler(makeDenseTimeline()))
+    await screen.findByTestId('timeline-now-divider')
+
+    const show = screen.getByRole('button', { name: 'Show 2 overdue deadlines' })
+    show.focus()
+    expect(show).toHaveFocus()
+    await user.keyboard('{Enter}')
+
+    const marker = await screen.findByRole('button', { name: /Overdue electricity/ })
+    await waitFor(() => expect(marker).toHaveFocus())
+    expect(screen.getByRole('region', { name: 'Deadlines including overdue' })).toBeInTheDocument()
+    expect(screen.getByText('Showing 2 overdue deadlines.')).toBeInTheDocument()
+
+    const hide = screen.getByRole('button', { name: 'Hide 2 overdue deadlines' })
+    hide.focus()
+    await user.keyboard(' ')
+    await waitFor(() => expect(hide).toHaveFocus())
+    expect(screen.getByRole('region', { name: 'Upcoming deadlines' })).toBeInTheDocument()
+    expect(screen.getByText('Hiding overdue deadlines. Showing upcoming only.')).toBeInTheDocument()
+  })
+
+  it('performs no writes when revealing or hiding overdue deadlines', async () => {
+    const user = userEvent.setup()
+    const { fetchMock } = renderTimeline(scopedTimelineHandler(makeDenseTimeline()))
+    await screen.findByTestId('timeline-now-divider')
+
+    await user.click(screen.getByRole('button', { name: 'Show 2 overdue deadlines' }))
+    await screen.findByRole('button', { name: 'Hide 2 overdue deadlines' })
+    await user.click(screen.getByRole('button', { name: 'Hide 2 overdue deadlines' }))
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('button', { name: /Overdue electricity/ }),
+      ).not.toBeInTheDocument(),
+    )
+
+    const writes = fetchMock.mock.calls.filter(([, init]) => {
+      const method = init?.method ?? 'GET'
+      return method !== 'GET' && method !== 'HEAD'
+    })
+    expect(writes).toHaveLength(0)
   })
 })
