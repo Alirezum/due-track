@@ -347,6 +347,38 @@ def test_delete_history_entry_leaves_the_advanced_occurrence_untouched(
     assert occurrences[0]["status"] == "active"
 
 
+def test_undoing_an_overdue_completion_restores_scope_counts_and_amounts(
+    client: TestClient,
+) -> None:
+    item = _create(
+        client,
+        title="Overdue insurance",
+        due={"kind": "datetime", "at": "2026-11-04T11:00:00Z"},
+        amount_cents=4599,
+    )
+    completed = _complete(client, item["id"])
+
+    after_completion = client.get("/api/items", params={"scope": "upcoming"}).json()
+    assert after_completion["summary"]["overdue_count"] == 0
+    assert after_completion["buckets"]["overdue"] == []
+
+    response = client.post(f"/api/history/{completed['log']['id']}/undo")
+
+    assert response.status_code == 200, response.text
+    restored = response.json()["restored_item"]
+    assert restored["amount_cents"] == 4599
+
+    upcoming = client.get("/api/items", params={"scope": "upcoming"}).json()
+    all_scope = client.get("/api/items").json()
+    assert upcoming["buckets"]["overdue"] == []
+    assert upcoming["summary"]["overdue_count"] == 1
+    assert upcoming["summary"]["upcoming_total_cents"] == 0
+    assert upcoming["currency_code"] == "USD"
+    assert all_scope["buckets"]["overdue"][0]["amount_cents"] == 4599
+    assert all_scope["summary"]["overdue_count"] == 1
+    assert all_scope["summary"] == upcoming["summary"]
+
+
 def _active_items(dashboard: dict[str, Any]) -> list[dict[str, Any]]:
     return [
         entry

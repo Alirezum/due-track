@@ -53,6 +53,10 @@ def _count_logs(database: Path) -> int:
         connection.close()
 
 
+def _titles(items: list[dict[str, Any]]) -> list[str]:
+    return [item["title"] for item in items]
+
+
 def test_one_time_completion_returns_null_item_and_hides_the_item(
     client: TestClient, migrated_database: Path
 ) -> None:
@@ -113,6 +117,66 @@ def test_recurring_completion_advances_to_exactly_one_next_occurrence(
     assert log["previous_state"]["due_local_date"] == "2026-11-10"
 
     assert _count_logs(migrated_database) == 1
+
+
+def test_completing_an_overdue_item_updates_scope_counts_and_preserves_amounts(
+    client: TestClient,
+) -> None:
+    item = _create(
+        client,
+        title="Overdue bill",
+        due={"kind": "datetime", "at": "2026-11-05T11:00:00Z"},
+        amount_cents=4599,
+    )
+    before = client.get("/api/items", params={"scope": "upcoming"}).json()
+    assert before["summary"]["overdue_count"] == 1
+    assert before["buckets"]["overdue"] == []
+
+    body = _complete(client, item["id"])
+
+    assert body["log"]["previous_state"]["amount_cents"] == 4599
+    upcoming = client.get("/api/items", params={"scope": "upcoming"}).json()
+    all_scope = client.get("/api/items").json()
+    assert upcoming["buckets"]["overdue"] == []
+    assert upcoming["summary"]["overdue_count"] == 0
+    assert upcoming["summary"]["upcoming_total_cents"] == 0
+    assert upcoming["currency_code"] == "USD"
+    assert all_scope["buckets"]["overdue"] == []
+    assert all_scope["summary"] == upcoming["summary"]
+
+
+def test_completing_overdue_recurring_items_places_next_occurrences_in_upcoming(
+    client: TestClient,
+) -> None:
+    weekly = _create(
+        client,
+        title="Weekly overdue",
+        due={"kind": "date", "date": "2026-10-30"},
+        recurrence_freq="weekly",
+    )
+    daily = _create(
+        client,
+        title="Daily overdue",
+        due={"kind": "datetime", "at": "2026-11-04T11:00:00Z"},
+        recurrence_freq="daily",
+    )
+    before = client.get("/api/items", params={"scope": "upcoming"}).json()
+    assert before["summary"]["overdue_count"] == 2
+
+    _complete(client, weekly["id"])
+    _complete(client, daily["id"])
+
+    all_scope = client.get("/api/items").json()
+    upcoming = client.get("/api/items", params={"scope": "upcoming"}).json()
+    # Schedule-anchored recurrence always advances past the completion instant, so both
+    # next occurrences land in the upcoming set rather than remaining overdue.
+    assert _titles(all_scope["buckets"]["upcoming"]) == ["Daily overdue", "Weekly overdue"]
+    assert all_scope["buckets"]["overdue"] == []
+    assert all_scope["summary"]["overdue_count"] == 0
+    assert upcoming["summary"]["overdue_count"] == 0
+    assert upcoming["buckets"]["overdue"] == []
+    assert _titles(upcoming["buckets"]["upcoming"]) == ["Daily overdue", "Weekly overdue"]
+    assert upcoming["summary"] == all_scope["summary"]
 
 
 def test_recurring_completion_without_a_valid_next_occurrence_completes_the_series(
