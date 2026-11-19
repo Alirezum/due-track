@@ -95,6 +95,55 @@ export function TimelineError({ message, onRetry }: TimelineErrorProps) {
   )
 }
 
+type TimelineUpcomingEmptyProps = {
+  hasFilters: boolean
+  overdueCount: number
+  onCreate: () => void
+  onShowOverdue: () => void
+  onClearFilters: () => void
+}
+
+export function TimelineUpcomingEmpty({
+  hasFilters,
+  overdueCount,
+  onCreate,
+  onShowOverdue,
+  onClearFilters,
+}: TimelineUpcomingEmptyProps) {
+  const overdueLabel =
+    overdueCount === 1 ? '1 deadline is overdue.' : `${overdueCount} deadlines are overdue.`
+  const matchesLabel =
+    overdueCount === 1 ? '1 overdue deadline matches.' : `${overdueCount} overdue deadlines match.`
+
+  return (
+    <section
+      aria-label="Upcoming deadlines"
+      className="rounded-[2px] border border-dashed border-border bg-timeline-paper px-6 py-12 text-center"
+    >
+      <h2 className="font-display text-2xl font-semibold tracking-[-0.025em] text-balance">
+        {hasFilters ? 'No upcoming deadlines match these filters.' : 'Nothing is upcoming.'}
+      </h2>
+      <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
+        {hasFilters ? matchesLabel : overdueLabel}
+      </p>
+      <div className="mt-5 flex flex-wrap justify-center gap-2">
+        <Button type="button" onClick={onCreate}>
+          <Plus aria-hidden="true" />
+          New deadline
+        </Button>
+        {hasFilters ? (
+          <Button type="button" variant="ghost" onClick={onClearFilters}>
+            Clear filters
+          </Button>
+        ) : null}
+        <Button type="button" variant="secondary" onClick={onShowOverdue}>
+          Show overdue
+        </Button>
+      </div>
+    </section>
+  )
+}
+
 type TimelineNoResultsProps = {
   hasFilters: boolean
   onClearFilters: () => void

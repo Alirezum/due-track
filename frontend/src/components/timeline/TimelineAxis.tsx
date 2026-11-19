@@ -24,7 +24,10 @@ export function TimelineAxis({ window, width, timezone, liveNowMs }: TimelineAxi
     }
   }, [timezone, width, window.endMs, window.startMs, window.horizon])
 
-  const nowRatio = positionFor(liveNowMs, window.startMs, window.endMs) * 100
+  const nowRatio = Math.min(
+    98,
+    Math.max(2, positionFor(liveNowMs, window.startMs, window.endMs) * 100),
+  )
 
   return (
     <div className="pointer-events-none absolute inset-0" aria-hidden="true">

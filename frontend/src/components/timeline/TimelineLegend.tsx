@@ -1,4 +1,4 @@
-export function TimelineLegend() {
+export function TimelineLegend({ showOverdue = true }: { showOverdue?: boolean }) {
   return (
     <section
       aria-label="Timeline legend"
@@ -8,14 +8,16 @@ export function TimelineLegend() {
         <span aria-hidden="true" className="h-2 w-2 rounded-full bg-timeline-imminent" />
         Future rises above the rule
       </span>
-      <span className="inline-flex items-center gap-1.5">
-        <span
-          aria-hidden="true"
-          className="h-2.5 w-2 bg-timeline-overdue"
-          style={{ clipPath: 'polygon(0 0, 100% 0, 100% 62%, 50% 100%, 0 62%)' }}
-        />
-        Overdue hangs below
-      </span>
+      {showOverdue ? (
+        <span className="inline-flex items-center gap-1.5">
+          <span
+            aria-hidden="true"
+            className="h-2.5 w-2 bg-timeline-overdue"
+            style={{ clipPath: 'polygon(0 0, 100% 0, 100% 62%, 50% 100%, 0 62%)' }}
+          />
+          Overdue hangs below
+        </span>
+      ) : null}
       <span className="inline-flex items-center gap-1.5">
         <span aria-hidden="true" className="h-2.5 w-2.5 rotate-45 bg-timeline-now" />
         Now

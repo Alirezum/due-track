@@ -1,3 +1,5 @@
+import type { ItemListResponse } from '@/api/types'
+
 const CATEGORY_TONE_CLASSES = [
   'border-teal-700/25 bg-teal-700/10 text-teal-900 dark:border-teal-300/30 dark:bg-teal-300/10 dark:text-teal-100',
   'border-amber-700/25 bg-amber-600/10 text-amber-900 dark:border-amber-300/30 dark:bg-amber-300/10 dark:text-amber-100',
@@ -34,4 +36,19 @@ export function categoryBadgeTone(label: string | null | undefined): number | nu
 export function categoryBadgeClass(label: string | null | undefined): string | null {
   const tone = categoryBadgeTone(label)
   return tone === null ? null : CATEGORY_TONE_CLASSES[tone]
+}
+
+export function categoriesFromItemList(data: ItemListResponse | undefined): string[] {
+  if (!data) {
+    return []
+  }
+  const categories = new Set<string>()
+  for (const items of Object.values(data.buckets)) {
+    for (const item of items) {
+      if (item.category) {
+        categories.add(item.category)
+      }
+    }
+  }
+  return [...categories].sort((left, right) => left.localeCompare(right))
 }

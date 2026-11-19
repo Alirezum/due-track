@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
 import { MemoryRouter } from 'react-router-dom'
@@ -81,6 +81,25 @@ function markerTitles(list: HTMLElement): string[] {
   )
 }
 
+async function revealOverdue(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(await screen.findByRole('button', { name: /Show \d+ overdue deadline/ }))
+  await screen.findByRole('button', { name: /Hide \d+ overdue deadline/ })
+  await screen.findByRole('button', { name: /Overdue electricity/ })
+}
+
+function scopedTimelineHandler(all: TimelineResponse) {
+  const upcoming = makeTimelineResponse(
+    all.entries.filter((entry) => entry.urgency !== 'overdue'),
+    { overdue_count: all.overdue_count },
+  )
+  return (url: string) => {
+    if (!url.startsWith('/api/timeline')) {
+      return jsonResponse(EMPTY_ITEMS)
+    }
+    return jsonResponse(url.includes('scope=upcoming') ? upcoming : all)
+  }
+}
+
 beforeEach(() => {
   vi.unstubAllGlobals()
 })
@@ -122,6 +141,7 @@ describe('TimelinePage US1 baseline', () => {
   })
 
   it('renders every entry exactly once in chronological order with due moments and countdowns', async () => {
+    const user = userEvent.setup()
     const response = makeDenseTimeline()
     const visible = response.entries.filter(
       (entry) => Date.parse(entry.item.due_at_utc) <= FIXED_REFERENCE_MS + 30 * 24 * 3_600_000,
@@ -129,6 +149,7 @@ describe('TimelinePage US1 baseline', () => {
     renderTimeline(makeTimelineResponse(visible))
 
     expect(await screen.findByRole('heading', { name: 'Time, laid bare.' })).toBeInTheDocument()
+    await revealOverdue(user)
 
     const list = await screen.findByRole('list', { name: 'Deadlines in chronological order' })
     expect(markerTitles(list)).toEqual(visible.map((entry) => entry.item.title))
@@ -152,8 +173,10 @@ describe('TimelinePage US1 baseline', () => {
   })
 
   it('places overdue entries before the labelled now line and future entries after it', async () => {
+    const user = userEvent.setup()
     const response = makeDenseTimeline()
     renderTimeline(response)
+    await revealOverdue(user)
 
     const list = await screen.findByRole('list', { name: 'Deadlines in chronological order' })
     const nowDivider = screen.getByTestId('timeline-now-divider')
@@ -206,8 +229,10 @@ describe('TimelinePage US1 baseline', () => {
   })
 
   it('summarises an all-overdue timeline', async () => {
+    const user = userEvent.setup()
     const entries = makeDenseTimeline().entries.filter((entry) => entry.urgency === 'overdue')
     renderTimeline(makeTimelineResponse(entries))
+    await revealOverdue(user)
 
     expect(await screen.findByText('All 2 active deadlines are overdue.')).toBeInTheDocument()
     const summary = screen.getByRole('region', { name: 'Timeline summary' })
@@ -287,6 +312,312 @@ describe('TimelinePage US1 baseline', () => {
   })
 })
 
+describe('TimelinePage upcoming focus', () => {
+  it('defaults to upcoming scope and hides overdue markers while reporting the server count', async () => {
+    const all = makeDenseTimeline()
+    const upcoming = makeTimelineResponse(
+      all.entries.filter((entry) => entry.urgency !== 'overdue'),
+      { overdue_count: all.overdue_count },
+    )
+    const { fetchMock } = renderTimeline((url) => {
+      if (!url.startsWith('/api/timeline')) {
+        return jsonResponse(EMPTY_ITEMS)
+      }
+      return jsonResponse(url.includes('scope=upcoming') ? upcoming : all)
+    })
+
+    await screen.findByRole('list', { name: 'Deadlines in chronological order' })
+    const timelineRequests = fetchMock.mock.calls
+      .map(([input]) => String(input))
+      .filter((url) => url.startsWith('/api/timeline'))
+    expect(timelineRequests).toContain('/api/timeline?scope=upcoming')
+    expect(timelineRequests.every((url) => url.includes('scope=upcoming'))).toBe(true)
+
+    expect(screen.queryByRole('button', { name: /Overdue electricity/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Overdue dentist/ })).not.toBeInTheDocument()
+    const summary = screen.getByRole('region', { name: 'Timeline summary' })
+    expect(within(summary).getByText('2')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Show 2 overdue deadlines' })).toBeInTheDocument()
+    expect(screen.getByText(/Overdue deadlines are summarized/)).toBeInTheDocument()
+  })
+
+  it('reveals and hides overdue deadlines with focus and equivalent region labels', async () => {
+    mockWideViewport()
+    const user = userEvent.setup()
+    const overdue = makeTimelineEntry({
+      id: 300,
+      title: 'Overdue electricity',
+      dueAtUtc: new Date(FIXED_REFERENCE_MS - 10 * 24 * 60 * 60_000).toISOString(),
+      urgency: 'overdue',
+    })
+    const upcomingEntry = makeTimelineEntry({
+      id: 301,
+      title: 'Future task',
+      dueAtUtc: new Date(FIXED_REFERENCE_MS + 10 * 24 * 60 * 60_000).toISOString(),
+      urgency: 'later',
+    })
+    const all = makeTimelineResponse([overdue, upcomingEntry])
+    const upcoming = makeTimelineResponse([upcomingEntry], { overdue_count: 1 })
+    const { fetchMock } = renderTimeline((url) => {
+      if (!url.startsWith('/api/timeline')) {
+        return jsonResponse(EMPTY_ITEMS)
+      }
+      return jsonResponse(url.includes('scope=upcoming') ? upcoming : all)
+    })
+
+    await screen.findByTestId('timeline-now')
+    expect(screen.getByRole('region', { name: 'Upcoming deadlines' })).toBeInTheDocument()
+    expect(screen.queryByText('Overdue hangs below')).not.toBeInTheDocument()
+    expect(screen.getByTestId('timeline-now')).toHaveStyle({ left: '2%' })
+    expect(
+      screen.queryByRole('button', { name: /earlier deadlines/ }),
+    ).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Show 1 overdue deadline' }))
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls
+          .map(([input]) => String(input))
+          .filter((url) => url.startsWith('/api/timeline')),
+      ).toContain('/api/timeline'),
+    )
+    const first = await screen.findByRole('button', { name: /Overdue electricity/ })
+    await waitFor(() => expect(first).toHaveFocus())
+    expect(
+      screen.getByRole('region', { name: 'Deadlines including overdue' }),
+    ).toBeInTheDocument()
+    expect(screen.getByText('Overdue hangs below')).toBeInTheDocument()
+    expect(screen.getByText(/what has passed/)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Hide 1 overdue deadline' }))
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('button', { name: /Overdue electricity/ }),
+      ).not.toBeInTheDocument(),
+    )
+    expect(screen.getByRole('region', { name: 'Upcoming deadlines' })).toBeInTheDocument()
+    expect(screen.queryByText('Overdue hangs below')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Show 1 overdue deadline' })).toHaveFocus()
+    expect(screen.getByText('Showing the next 30d from now')).toBeInTheDocument()
+  })
+
+  it('keeps overdue-only categories selectable from the all-scope source', async () => {
+    const user = userEvent.setup()
+    const overdueOnly = makeTimelineEntry({
+      id: 500,
+      title: 'Subscription renewal',
+      dueAtUtc: new Date(FIXED_REFERENCE_MS - 60 * 60_000).toISOString(),
+      urgency: 'overdue',
+      category: 'Subscriptions',
+    })
+    const all = makeTimelineResponse([overdueOnly])
+    const upcoming = makeTimelineResponse([], { overdue_count: 1 })
+    const items: ItemListResponse = {
+      buckets: { overdue: [overdueOnly.item], due_today: [], upcoming: [], later: [] },
+      summary: { overdue_count: 1, due_today_count: 0, upcoming_total_cents: 0 },
+      currency_code: 'USD',
+      timezone: 'America/New_York',
+    }
+    renderTimeline((url) => {
+      if (url.startsWith('/api/timeline')) {
+        return jsonResponse(url.includes('scope=upcoming') ? upcoming : all)
+      }
+      if (url.startsWith('/api/items')) {
+        return jsonResponse(items)
+      }
+      return jsonResponse({ detail: 'not found' }, 404)
+    })
+
+    expect(await screen.findByText('Nothing is upcoming.')).toBeInTheDocument()
+    expect(
+      document.querySelector('datalist#filter-category-options option[value="Subscriptions"]'),
+    ).not.toBeNull()
+
+    await user.type(screen.getByLabelText('Category'), 'Subscriptions')
+    expect(
+      await screen.findByText('No upcoming deadlines match these filters.'),
+    ).toBeInTheDocument()
+    expect(screen.getByText('1 overdue deadline matches.')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Show overdue' }))
+    expect(
+      await screen.findByRole('button', { name: /Subscription renewal/ }),
+    ).toBeInTheDocument()
+  })
+
+  it('shows the all-overdue and filtered no-results states', async () => {
+    const user = userEvent.setup()
+    const overdueEntries = makeDenseTimeline().entries.filter(
+      (entry) => entry.urgency === 'overdue',
+    )
+    const all = makeTimelineResponse(overdueEntries)
+    const upcoming = makeTimelineResponse([], { overdue_count: 2 })
+    renderTimeline((url) => {
+      if (!url.startsWith('/api/timeline')) {
+        return jsonResponse(EMPTY_ITEMS)
+      }
+      return jsonResponse(url.includes('scope=upcoming') ? upcoming : all)
+    })
+
+    expect(await screen.findByText('Nothing is upcoming.')).toBeInTheDocument()
+    expect(screen.getByText('2 deadlines are overdue.')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Show overdue' }))
+    expect(
+      await screen.findByText('All 2 active deadlines are overdue.'),
+    ).toBeInTheDocument()
+  })
+
+  it('shows the filtered no-results state when nothing matches at all', async () => {
+    const user = userEvent.setup()
+    renderTimeline(scopedTimelineHandler(makeTimelineResponse([])))
+
+    expect(await screen.findByText('Nothing on the ledger yet.')).toBeInTheDocument()
+    await user.type(screen.getByLabelText('Category'), 'Missing category')
+    expect(
+      await screen.findByText('No deadlines match these filters.'),
+    ).toBeInTheDocument()
+    const filteredRegion = screen.getByRole('region', { name: 'Filtered timeline' })
+    expect(
+      within(filteredRegion).getByRole('button', { name: 'Clear filters' }),
+    ).toBeInTheDocument()
+  })
+
+  it('shows an overdue-hidden notice after creating an overdue deadline', async () => {
+    const user = userEvent.setup()
+    const created = makeTimelineEntry({
+      id: 600,
+      title: 'Overdue created',
+      dueAtUtc: new Date(FIXED_REFERENCE_MS - 60 * 60_000).toISOString(),
+      urgency: 'overdue',
+    })
+    let createdOnServer = false
+    const { fetchMock } = renderTimeline((url, init) => {
+      if (url === '/api/items' && init.method === 'POST') {
+        createdOnServer = true
+        return jsonResponse(created.item, 201)
+      }
+      if (url.startsWith('/api/timeline')) {
+        const all = createdOnServer
+          ? makeTimelineResponse([created])
+          : makeTimelineResponse([])
+        const upcoming = makeTimelineResponse([], {
+          overdue_count: createdOnServer ? 1 : 0,
+        })
+        return jsonResponse(url.includes('scope=upcoming') ? upcoming : all)
+      }
+      return jsonResponse(EMPTY_ITEMS)
+    })
+
+    await screen.findByText('Nothing on the ledger yet.')
+    await user.click(screen.getAllByRole('button', { name: 'New deadline' })[0])
+    const dialog = await screen.findByRole('dialog', { name: 'New deadline' })
+    await user.type(within(dialog).getByLabelText('Title'), 'Overdue created')
+    await user.click(within(dialog).getByRole('button', { name: 'Create deadline' }))
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/items',
+        expect.objectContaining({ method: 'POST' }),
+      ),
+    )
+    const notice = await screen.findByTestId('overdue-hidden-notice')
+    expect(
+      within(notice).getByText(
+        'Saved “Overdue created”. It is overdue, so it is hidden by the upcoming focus.',
+      ),
+    ).toBeInTheDocument()
+
+    await user.click(within(notice).getByRole('button', { name: 'Show overdue' }))
+    const marker = await screen.findByRole('button', { name: /Overdue created/ })
+    await waitFor(() => expect(marker).toHaveFocus())
+    expect(marker).toHaveAttribute('aria-current', 'true')
+    expect(marker).toHaveAttribute('data-highlighted', 'true')
+  })
+
+  it('moves selection to the nearest upcoming deadline when one crosses now', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const crossing = makeTimelineEntry({
+      id: 700,
+      title: 'Crossing soon',
+      dueAtUtc: new Date(FIXED_REFERENCE_MS + 30_000).toISOString(),
+      urgency: 'within_24h',
+      secondsUntilDue: 30,
+    })
+    const remaining = makeTimelineEntry({
+      id: 701,
+      title: 'Still ahead',
+      dueAtUtc: new Date(FIXED_REFERENCE_MS + 2 * 60 * 60_000).toISOString(),
+      urgency: 'within_24h',
+    })
+    let crossed = false
+    renderTimeline((url) => {
+      if (!url.startsWith('/api/timeline')) {
+        return jsonResponse(EMPTY_ITEMS)
+      }
+      return jsonResponse(
+        makeTimelineResponse(crossed ? [remaining] : [crossing, remaining], {
+          overdue_count: crossed ? 1 : 0,
+        }),
+      )
+    })
+
+    const marker = await screen.findByRole('button', { name: /Crossing soon/ })
+    fireEvent.click(marker)
+    expect(
+      await screen.findByRole('dialog', { name: 'Deadline details' }),
+    ).toBeInTheDocument()
+
+    crossed = true
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(31_000)
+      await vi.advanceTimersByTimeAsync(1)
+    })
+
+    expect(
+      screen.queryByRole('button', { name: /Crossing soon/ }),
+    ).not.toBeInTheDocument()
+    const next = screen.getByRole('button', { name: /Still ahead/ })
+    expect(next).toHaveAttribute('aria-current', 'true')
+    expect(
+      screen.queryByRole('dialog', { name: 'Deadline details' }),
+    ).not.toBeInTheDocument()
+    expect(screen.getByText('Selected Still ahead.')).toBeInTheDocument()
+    const summary = screen.getByRole('region', { name: 'Timeline summary' })
+    expect(within(summary).getByText('1')).toBeInTheDocument()
+  })
+
+  it('keeps the stale timeline and offers a retry strip when a refresh fails', async () => {
+    const all = makeDenseTimeline()
+    const upcoming = makeTimelineResponse(
+      all.entries.filter((entry) => entry.urgency !== 'overdue'),
+      { overdue_count: all.overdue_count },
+    )
+    let fail = false
+    renderTimeline((url) => {
+      if (!url.startsWith('/api/timeline')) {
+        return jsonResponse(EMPTY_ITEMS)
+      }
+      if (fail) {
+        return jsonResponse({ detail: 'The ledger is unavailable.' }, 503)
+      }
+      return jsonResponse(url.includes('scope=upcoming') ? upcoming : all)
+    })
+
+    await screen.findByRole('list', { name: 'Deadlines in chronological order' })
+    fail = true
+    await act(async () => {
+      window.dispatchEvent(new Event('visibilitychange'))
+      await Promise.resolve()
+    })
+
+    expect(await screen.findByText(/could not be refreshed/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument()
+    expect(
+      screen.getByRole('list', { name: 'Deadlines in chronological order' }),
+    ).toBeInTheDocument()
+  })
+})
+
 function mockWideViewport(width = 1200) {
   vi.stubGlobal(
     'matchMedia',
@@ -318,6 +649,9 @@ function mockWideViewport(width = 1200) {
 }
 
 function filteredTimeline(url: string): Response {
+  if (!url.startsWith('/api/timeline')) {
+    return jsonResponse(EMPTY_ITEMS)
+  }
   const parsed = new URL(url, 'http://localhost')
   let entries = makeDenseTimeline().entries
   const category = parsed.searchParams.get('category')
@@ -377,6 +711,7 @@ describe('TimelinePage US2 horizons, edges, clusters, filters, and width', () =>
   it('reveals hidden deadlines from edge summaries and resets the span', async () => {
     const user = userEvent.setup()
     renderTimeline(makeDenseTimeline())
+    await revealOverdue(user)
 
     await screen.findByTestId('timeline-now-divider')
     await user.click(screen.getByRole('button', { name: '24h' }))
@@ -428,6 +763,7 @@ describe('TimelinePage US2 horizons, edges, clusters, filters, and width', () =>
   it('applies category, priority, recurrence, and search with AND semantics', async () => {
     const user = userEvent.setup()
     renderTimeline(filteredTimeline)
+    await revealOverdue(user)
 
     await screen.findByRole('list', { name: 'Deadlines in chronological order' })
     expect(markerTitles(chronologicalList())).toHaveLength(29)
@@ -469,6 +805,7 @@ describe('TimelinePage US2 horizons, edges, clusters, filters, and width', () =>
   it('preserves the selected deadline when the horizon changes', async () => {
     const user = userEvent.setup()
     renderTimeline(makeDenseTimeline())
+    await revealOverdue(user)
 
     const marker = await screen.findByRole('button', { name: /Overdue electricity/ })
     await user.click(marker)

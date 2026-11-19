@@ -27,6 +27,7 @@ import {
   useUpdateItem,
 } from '@/hooks/useItems'
 import { useShortcuts } from '@/hooks/useShortcuts'
+import { categoriesFromItemList } from '@/lib/categories'
 import { EMPTY_FILTERS, hasActiveFilters, type ItemFilters } from '@/lib/filters'
 
 const REFETCH_INTERVAL_MS = 55_000
@@ -48,21 +49,6 @@ function describeError(error: unknown): string {
     }
   }
   return 'The change could not be saved. Check that the local server is running and try again.'
-}
-
-function categoriesFrom(data: ItemListResponse | undefined): string[] {
-  if (!data) {
-    return []
-  }
-  const categories = new Set<string>()
-  for (const items of Object.values(data.buckets)) {
-    for (const item of items) {
-      if (item.category) {
-        categories.add(item.category)
-      }
-    }
-  }
-  return [...categories].sort((a, b) => a.localeCompare(b))
 }
 
 function allBucketItems(data: ItemListResponse): DueItem[] {
@@ -103,7 +89,7 @@ export function DashboardPage() {
     { refetchInterval: REFETCH_INTERVAL_MS, refetchOnWindowFocus: true },
   )
   const categorySource = useItems()
-  const categories = useMemo(() => categoriesFrom(categorySource.data), [categorySource.data])
+  const categories = useMemo(() => categoriesFromItemList(categorySource.data), [categorySource.data])
   const createItem = useCreateItem()
   const updateItem = useUpdateItem()
   const deleteItem = useDeleteItem()
