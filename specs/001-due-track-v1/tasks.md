@@ -173,7 +173,7 @@
 - [X] T067 [P] [US4] Implement `frontend/src/hooks/useHistory.ts` with TanStack Query history list, undo, and delete mutations plus items/history invalidation.
 - [X] T068 [US4] Implement `frontend/src/pages/HistoryPage.tsx` to render snapshot fields, original due date, completion timestamp, `can_undo`, a preservation warning, and confirmed deletion.
 - [X] T069 [US4] Wire the `/history` route in `frontend/src/App.tsx` and verify `npm run build` in `frontend/`.
-- [ ] T070 [US4] Run the US4 quality gates from `specs/001-due-track-v1/plan.md` and the history tests in `backend/tests/integration/api/test_history.py` and `frontend/tests/history.test.tsx`.
+- [X] T070 [US4] Run the US4 quality gates from `specs/001-due-track-v1/plan.md` and the history tests in `backend/tests/integration/api/test_history.py` and `frontend/tests/history.test.tsx`.
 
 **Checkpoint**: User Stories 1–4 work independently; completion history is a safe audit trail.
 
