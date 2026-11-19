@@ -209,7 +209,7 @@
 - [X] T078 [P] Implement production serving in `backend/src/due_track/main.py` to start Uvicorn on `DUE_TRACK_HOST`/`DUE_TRACK_PORT` and serve `frontend/dist` assets while keeping `/api` authoritative.
 - [X] T079 [P] Add an OpenAPI/route consistency test in `backend/tests/integration/api/test_openapi_contract.py` that loads `contracts/openapi.yaml`, verifies every documented path/method exists in the FastAPI app, and validates representative response bodies against their documented schemas.
 - [X] T080 [P] Add a cross-story workflow test in `backend/tests/integration/api/test_workflows.py` covering create → filter → complete → history → undo → delete-item → delete-history.
-- [ ] T081 [P] Add a performance smoke test in `backend/tests/integration/api/test_performance.py` seeding 1,000 active items and asserting `GET /api/items` with filters completes under 1 second.
+- [X] T081 [P] Add a performance smoke test in `backend/tests/integration/api/test_performance.py` seeding 1,000 active items and asserting `GET /api/items` with filters completes under 1 second.
 - [ ] T082 [P] Update `README.md` and `CHANGELOG.md` with setup/run/quality commands and document the free-text category-label model, the two-table schema, and the `api/time.py` boundary-only timezone rule.
 - [ ] T083 [P] Review `backend/src/due_track` and `frontend/src` for loopback binding, no telemetry/external requests, plain-text notes rendering, parameterized SQL, no timezone conversion outside `api/time.py`, and no secrets; record any caveat in `specs/001-due-track-v1/quickstart.md`.
 - [ ] T084 Run the full quality gate from `specs/001-due-track-v1/plan.md`: backend pytest, ruff check, ruff format --check, mypy, frontend `test:run`, and frontend build.
