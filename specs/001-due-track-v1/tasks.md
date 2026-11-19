@@ -191,7 +191,7 @@
 
 ### Implementation for User Story 5
 
-- [ ] T072 [P] [US5] Implement `frontend/src/lib/shortcuts.ts` with the shortcut definitions, labels, and help descriptions from `specs/001-due-track-v1/plan.md`.
+- [X] T072 [P] [US5] Implement `frontend/src/lib/shortcuts.ts` with the shortcut definitions, labels, and help descriptions from `specs/001-due-track-v1/plan.md`.
 - [ ] T073 [US5] Implement `frontend/src/hooks/useShortcuts.ts` with global keydown handling, input-target suppression, preventDefault where needed, and active-item navigation callbacks.
 - [ ] T074 [P] [US5] Implement `frontend/src/components/ShortcutHelp.tsx` using the shadcn Dialog primitive with a focus trap, Esc close, and all shortcuts listed.
 - [ ] T075 [US5] Add visible focus rings, an active-item highlight, and ARIA labels to `frontend/src/components/ItemCard.tsx` and `frontend/src/components/AppShell.tsx`.
