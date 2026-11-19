@@ -22,6 +22,7 @@ type TimelineMarkerProps = {
   xPercent?: number
   onSelect?: (entry: TimelineEntry) => void
   buttonRef?: (node: HTMLButtonElement | null) => void
+  tabIndex?: number
 }
 
 const NOTCHED_TAG_STYLE: CSSProperties = {
@@ -74,6 +75,7 @@ export function TimelineMarker({
   xPercent = 50,
   onSelect,
   buttonRef,
+  tabIndex = 0,
 }: TimelineMarkerProps) {
   const dueMs = Date.parse(entry.item.due_at_utc)
   const remaining = Number.isFinite(dueMs) ? Math.floor((dueMs - liveNowMs) / 1000) : 0
@@ -156,11 +158,13 @@ export function TimelineMarker({
         <button
           ref={buttonRef}
           type="button"
+          tabIndex={tabIndex}
           onClick={() => onSelect?.(entry)}
           aria-current={selected ? 'true' : undefined}
           aria-label={entryAriaLabel(entry, liveNowMs, timezone)}
           data-timeline-marker=""
           data-entry-id={entry.item.id}
+          data-highlighted={highlighted ? 'true' : undefined}
           className={cn(
             'group relative -ml-7 grid w-full grid-cols-[0.625rem_minmax(0,1fr)] items-start gap-3 rounded-[4px] py-2 pr-2 pl-0 text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
           )}
@@ -216,11 +220,13 @@ export function TimelineMarker({
       <button
         ref={buttonRef}
         type="button"
+        tabIndex={tabIndex}
         onClick={() => onSelect?.(entry)}
         aria-current={selected ? 'true' : undefined}
         aria-label={entryAriaLabel(entry, liveNowMs, timezone)}
         className="group absolute top-1/2 left-0 flex h-10 w-10 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
         data-side={side}
+        data-highlighted={highlighted ? 'true' : undefined}
         data-urgency={entry.urgency}
         data-date-only={entry.item.is_date_only ? 'true' : undefined}
         data-timeline-marker=""

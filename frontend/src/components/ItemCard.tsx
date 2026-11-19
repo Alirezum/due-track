@@ -1,9 +1,10 @@
 import { CalendarDays, Pencil, Repeat2, Trash2 } from 'lucide-react'
-import type { DueItem, RecurrenceFrequency } from '@/api/types'
+import type { DueItem } from '@/api/types'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { categoryBadgeClass, categoryBadgeTone } from '@/lib/categories'
 import { formatAmount, formatDue, formatLocalDate } from '@/lib/format'
+import { recurrenceSummary } from '@/lib/recurrence'
 import { cn } from '@/lib/utils'
 
 const PRIORITY_BORDER: Record<DueItem['priority'], string> = {
@@ -18,36 +19,6 @@ const PRIORITY_LABEL: Record<DueItem['priority'], string> = {
   high: 'High',
   medium: 'Medium',
   low: 'Low',
-}
-
-const FREQUENCY_LABEL: Partial<Record<RecurrenceFrequency, string>> = {
-  daily: 'Repeats daily',
-  weekly: 'Repeats weekly',
-  monthly: 'Repeats monthly',
-  yearly: 'Repeats yearly',
-}
-
-const CUSTOM_FREQUENCY: Partial<Record<RecurrenceFrequency, [string, string]>> = {
-  custom_days: ['day', 'days'],
-  custom_weeks: ['week', 'weeks'],
-  custom_months: ['month', 'months'],
-  custom_years: ['year', 'years'],
-}
-
-function recurrenceSummary(item: DueItem): string | null {
-  if (item.recurrence_freq === 'none') {
-    return null
-  }
-
-  const custom = CUSTOM_FREQUENCY[item.recurrence_freq]
-  if (custom) {
-    const [singular, plural] = custom
-    return item.recurrence_interval === 1
-      ? `Repeats every ${singular}`
-      : `Repeats every ${item.recurrence_interval} ${plural}`
-  }
-
-  return FREQUENCY_LABEL[item.recurrence_freq] ?? 'Repeats'
 }
 
 export type ItemCardProps = {

@@ -38,6 +38,25 @@ export function formatTimelineDue(
   return isDateOnly ? `${day} · All day` : `${day} · ${formatTime(date, timezone, locale)}`
 }
 
+export function formatTimelineDueExact(
+  iso: string,
+  timezone: string,
+  isDateOnly: boolean,
+  locale?: string,
+): string {
+  const date = new Date(iso)
+  const day = new Intl.DateTimeFormat(locale, {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: timezone,
+  }).format(date)
+  return isDateOnly
+    ? `${day} · All day (${timezone})`
+    : `${day} · ${formatTime(date, timezone, locale)} (${timezone})`
+}
+
 export function formatTimelineDayHeader(iso: string, timezone: string, locale?: string): string {
   return new Intl.DateTimeFormat(locale, {
     weekday: 'long',

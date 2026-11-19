@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Plus } from 'lucide-react'
 import { ApiError } from '@/api/client'
 import type { DueItem, ItemCreate, ItemUpdate, TimelineEntry } from '@/api/types'
@@ -7,6 +7,7 @@ import { FilterBar } from '@/components/FilterBar'
 import { ItemForm } from '@/components/ItemForm'
 import { ShortcutHelp } from '@/components/ShortcutHelp'
 import { TimelineCanvas } from '@/components/timeline/TimelineCanvas'
+import { TimelineDetailShell } from '@/components/timeline/TimelineDetailShell'
 import { TimelineLegend } from '@/components/timeline/TimelineLegend'
 import { TimelineToolbar } from '@/components/timeline/TimelineToolbar'
 import {
@@ -25,8 +26,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { useCompleteItem } from '@/hooks/useCompleteItem'
-import { useShortcuts } from '@/hooks/useShortcuts'
 import { useTimeline } from '@/hooks/useTimeline'
+import { useTimelineShortcuts } from '@/hooks/useTimelineShortcuts'
 import { useCreateItem, useDeleteItem, useUpdateItem } from '@/hooks/useItems'
 import { EMPTY_FILTERS, hasActiveFilters, type ItemFilters } from '@/lib/filters'
 import { formatCountdown } from '@/lib/timeline/countdown'
@@ -63,7 +64,10 @@ export function TimelinePage() {
   const [horizon, setHorizon] = useState<TimeHorizon>(DEFAULT_HORIZON)
   const [revealedEdges, setRevealedEdges] = useState(resetReveals)
   const [selectedId, setSelectedId] = useState<number | null>(null)
-  const [highlightedId] = useState<number | null>(null)
+  const [detailOpen, setDetailOpen] = useState(false)
+  const [highlightedId, setHighlightedId] = useState<number | null>(null)
+  const [announcement, setAnnouncement] = useState('')
+  const [filterExcluded, setFilterExcluded] = useState<{ id: number; title: string } | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
   const [editingItem, setEditingItem] = useState<DueItem | null>(null)
   const [deletingItem, setDeletingItem] = useState<DueItem | null>(null)
@@ -71,6 +75,8 @@ export function TimelinePage() {
   const [formError, setFormError] = useState<string | null>(null)
   const [pageError, setPageError] = useState<string | null>(null)
   const markerRefs = useRef<Map<number, HTMLButtonElement>>(new Map())
+  const focusFrame = useRef<number | null>(null)
+  const focusRun = useRef(0)
 
   const timeline = useTimeline(filters)
   const createItem = useCreateItem()
@@ -96,6 +102,10 @@ export function TimelinePage() {
   const overdueEntries = entries.filter((entry) => entry.urgency === 'overdue')
   const futureEntries = entries.filter((entry) => entry.urgency !== 'overdue')
   const nextEntry = futureEntries[0] ?? null
+  const selectedEntry = useMemo(
+    () => entries.find((entry) => entry.item.id === selectedId) ?? null,
+    [entries, selectedId],
+  )
   const filtersActive = hasActiveFilters(filters)
   const categories = useMemo(
     () =>
@@ -123,12 +133,40 @@ export function TimelinePage() {
   }
 
   function clearFilters() {
+    const excluded = filterExcluded
     setFilters(EMPTY_FILTERS)
     setRevealedEdges(resetReveals())
+    if (excluded) {
+      setFilterExcluded(null)
+      setSelectedId(excluded.id)
+      setHighlightedId(excluded.id)
+      setDetailOpen(false)
+      setAnnouncement(`Filters cleared. ${excluded.title} selected.`)
+      focusEntryWhenReady(excluded.id)
+    }
   }
 
-  function selectEntry(entry: TimelineEntry) {
+  function selectEntry(entry: TimelineEntry, focus: boolean) {
     setSelectedId(entry.item.id)
+    setHighlightedId(null)
+    setAnnouncement(`Selected ${entry.item.title}.`)
+    if (focus) {
+      focusEntryWhenReady(entry.item.id)
+    }
+  }
+
+  function openEntryDetail(entry: TimelineEntry) {
+    setSelectedId(entry.item.id)
+    setHighlightedId(null)
+    setDetailOpen(true)
+    setAnnouncement(`Selected ${entry.item.title}.`)
+  }
+
+  function closeDetail() {
+    setDetailOpen(false)
+    if (selectedId !== null) {
+      focusEntryWhenReady(selectedId)
+    }
   }
 
   const registerMarkerRef = useCallback((id: number, node: HTMLButtonElement | null) => {
@@ -139,37 +177,38 @@ export function TimelinePage() {
     }
   }, [])
 
-  function focusEntry(id: number) {
-    markerRefs.current.get(id)?.focus()
+  function focusEntryWhenReady(id: number) {
+    const run = focusRun.current + 1
+    focusRun.current = run
+    if (focusFrame.current !== null) {
+      cancelAnimationFrame(focusFrame.current)
+    }
+
+    const attempt = (remaining: number) => {
+      if (focusRun.current !== run) {
+        return
+      }
+      const node = markerRefs.current.get(id)
+      if (node) {
+        node.focus()
+        return
+      }
+      if (remaining > 0) {
+        focusFrame.current = requestAnimationFrame(() => attempt(remaining - 1))
+      }
+    }
+
+    focusFrame.current = requestAnimationFrame(() => attempt(20))
   }
 
-  function moveSelection(direction: -1 | 1) {
-    if (entries.length === 0) {
-      return
-    }
-    const currentIndex = selectedId === null ? -1 : entries.findIndex((item) => item.item.id === selectedId)
-    const nextIndex =
-      currentIndex === -1
-        ? direction === 1
-          ? 0
-          : entries.length - 1
-        : Math.min(Math.max(currentIndex + direction, 0), entries.length - 1)
-    const next = entries[nextIndex]
-    setSelectedId(next.item.id)
-    focusEntry(next.item.id)
-  }
-
-  function selectBoundary(index: 0 | -1) {
-    if (entries.length === 0) {
-      return
-    }
-    const next = entries.at(index)
-    if (!next) {
-      return
-    }
-    setSelectedId(next.item.id)
-    focusEntry(next.item.id)
-  }
+  useEffect(
+    () => () => {
+      if (focusFrame.current !== null) {
+        cancelAnimationFrame(focusFrame.current)
+      }
+    },
+    [],
+  )
 
   function handleRevealEdge(summary: EdgeSummary) {
     setRevealedEdges(
@@ -191,10 +230,6 @@ export function TimelinePage() {
     target.scrollIntoView({ block: 'center', behavior: reduced ? 'auto' : 'smooth' })
   }
 
-  function activeEntry(): TimelineEntry | null {
-    return entries.find((entry) => entry.item.id === selectedId) ?? entries[0] ?? null
-  }
-
   function openCreate() {
     setFormError(null)
     setCreateOpen(true)
@@ -210,7 +245,22 @@ export function TimelinePage() {
     try {
       const created = await createItem.mutateAsync(payload as ItemCreate)
       setCreateOpen(false)
-      setSelectedId(created.id)
+      const refreshed = await timeline.refetch()
+      const present =
+        refreshed.data?.entries.some((entry) => entry.item.id === created.id) ?? false
+
+      if (present) {
+        setSelectedId(created.id)
+        setHighlightedId(created.id)
+        setDetailOpen(false)
+        setAnnouncement(`Added ${created.title}. Highlighted on the timeline.`)
+        focusEntryWhenReady(created.id)
+      } else {
+        setSelectedId(null)
+        setDetailOpen(false)
+        setFilterExcluded({ id: created.id, title: created.title })
+        setAnnouncement(`Saved “${created.title}”, but the current filters hide it.`)
+      }
     } catch (error) {
       setFormError(describeError(error))
     }
@@ -222,19 +272,52 @@ export function TimelinePage() {
     }
     setFormError(null)
     try {
-      await updateItem.mutateAsync({ id: editingItem.id, ...(payload as ItemUpdate) })
-      setSelectedId(editingItem.id)
+      const updated = await updateItem.mutateAsync({
+        id: editingItem.id,
+        ...(payload as ItemUpdate),
+      })
       setEditingItem(null)
+      setSelectedId(updated.id)
+      setHighlightedId(updated.id)
+      const refreshed = await timeline.refetch()
+      const present =
+        refreshed.data?.entries.some((entry) => entry.item.id === updated.id) ?? false
+
+      if (present) {
+        setAnnouncement(`Updated ${updated.title}. Selection kept.`)
+      } else {
+        setDetailOpen(false)
+        setFilterExcluded({ id: updated.id, title: updated.title })
+        setAnnouncement(`Saved “${updated.title}”, but the current filters hide it.`)
+      }
     } catch (error) {
       setFormError(describeError(error))
     }
   }
 
-  async function handleComplete(item: DueItem) {
+  async function handleComplete(entry: TimelineEntry) {
+    const index = entries.findIndex((item) => item.item.id === entry.item.id)
+    const fallbackId =
+      index === -1 ? null : (entries[index + 1]?.item.id ?? entries[index - 1]?.item.id ?? null)
     setPageError(null)
     try {
-      await completeItem.mutateAsync(item.id)
-      setSelectedId(null)
+      const result = await completeItem.mutateAsync(entry.item.id)
+      const refreshed = await timeline.refetch()
+      const staysActive =
+        refreshed.data?.entries.some((item) => item.item.id === entry.item.id) ?? false
+
+      if (staysActive || result.item?.id === entry.item.id) {
+        setSelectedId(entry.item.id)
+        setHighlightedId(entry.item.id)
+        setAnnouncement(`Completed ${entry.item.title}. Next occurrence highlighted.`)
+      } else {
+        setSelectedId(fallbackId)
+        setDetailOpen(false)
+        setAnnouncement(`Completed ${entry.item.title}.`)
+        if (fallbackId !== null) {
+          focusEntryWhenReady(fallbackId)
+        }
+      }
     } catch (error) {
       setPageError(describeError(error))
     }
@@ -244,11 +327,20 @@ export function TimelinePage() {
     if (!deletingItem) {
       return
     }
+    const index = entries.findIndex((entry) => entry.item.id === deletingItem.id)
+    const fallbackId =
+      index === -1 ? null : (entries[index + 1]?.item.id ?? entries[index - 1]?.item.id ?? null)
     setPageError(null)
     try {
       await deleteItem.mutateAsync(deletingItem.id)
-      setSelectedId((current) => (current === deletingItem.id ? null : current))
+      await timeline.refetch()
       setDeletingItem(null)
+      setSelectedId(fallbackId)
+      setDetailOpen(false)
+      setAnnouncement(`Deleted ${deletingItem.title}.`)
+      if (fallbackId !== null) {
+        focusEntryWhenReady(fallbackId)
+      }
     } catch (error) {
       setPageError(describeError(error))
     }
@@ -256,48 +348,29 @@ export function TimelinePage() {
 
   const overlayOpen = createOpen || editingItem !== null || deletingItem !== null || helpOpen
 
-  useShortcuts(
-    {
-      onNew: openCreate,
-      onFocusSearch: () => document.getElementById('filter-search')?.focus(),
-      onFirstItem: () => selectBoundary(0),
-      onLastItem: () => selectBoundary(-1),
-      onNextItem: () => moveSelection(1),
-      onPreviousItem: () => moveSelection(-1),
-      onOpenItem: () => {
-        const active = activeEntry()
-        if (active) {
-          setSelectedId(active.item.id)
-        }
-      },
-      onCompleteItem: () => {
-        const active = activeEntry()
-        if (active) {
-          void handleComplete(active.item)
-        }
-      },
-      onEditItem: () => {
-        const active = activeEntry()
-        if (active) {
-          openEdit(active.item)
-        }
-      },
-      onDeleteItem: () => {
-        const active = activeEntry()
-        if (active) {
-          setDeletingItem(active.item)
-        }
-      },
-      onShowHelp: () => setHelpOpen(true),
-      onEscape: () => {
-        setHelpOpen(false)
-        setCreateOpen(false)
-        setEditingItem(null)
-        setDeletingItem(null)
-      },
+  useTimelineShortcuts({
+    entries,
+    selectedId,
+    enabled: !overlayOpen,
+    onSelect: selectEntry,
+    onOpenDetail: openEntryDetail,
+    onComplete: (entry) => void handleComplete(entry),
+    onEdit: (entry) => openEdit(entry.item),
+    onDelete: (entry) => setDeletingItem(entry.item),
+    onNew: openCreate,
+    onFocusSearch: () => document.getElementById('filter-search')?.focus(),
+    onShowHelp: () => setHelpOpen(true),
+    onEscape: () => {
+      setHelpOpen(false)
+      setCreateOpen(false)
+      setEditingItem(null)
+      setDeletingItem(null)
+      setDetailOpen(false)
+      if (selectedId !== null) {
+        focusEntryWhenReady(selectedId)
+      }
     },
-    { enabled: !overlayOpen },
-  )
+  })
 
   if (timeline.isPending && !data) {
     return (
@@ -416,10 +489,23 @@ export function TimelinePage() {
         </p>
       ) : null}
 
-      <p className="sr-only" role="status" aria-live="polite">
-        {selectedId
-          ? `Selected ${entries.find((entry) => entry.item.id === selectedId)?.item.title ?? 'deadline'}`
-          : ''}
+      {filterExcluded ? (
+        <div
+          role="status"
+          data-testid="filter-exclusion-notice"
+          className="flex flex-wrap items-center justify-between gap-3 border-l-2 border-timeline-highlight bg-timeline-highlight/10 py-2 pr-3 pl-3 text-sm"
+        >
+          <span>
+            Saved “{filterExcluded.title}”, but the current filters hide it.
+          </span>
+          <Button type="button" variant="outline" size="sm" onClick={clearFilters}>
+            Clear filters
+          </Button>
+        </div>
+      ) : null}
+
+      <p className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+        {announcement}
       </p>
 
       {entries.length === 0 ? (
@@ -429,42 +515,63 @@ export function TimelinePage() {
           <TimelineEmpty onCreate={openCreate} />
         )
       ) : (
-        <>
-          <TimelineCanvas
-            entries={entries}
-            window={viewWindow}
-            referenceTimeMs={timeline.referenceTimeMs}
-            liveNowMs={liveNowMs}
-            timezone={timezone}
-            selectedId={selectedId}
-            highlightedId={highlightedId}
-            onSelect={selectEntry}
-            onRevealEdge={handleRevealEdge}
-            clustering
-            registerMarkerRef={registerMarkerRef}
-          />
-          <TimelineLegend />
+        <div
+          className={
+            selectedEntry && detailOpen
+              ? 'grid gap-8 xl:grid-cols-[minmax(0,1fr)_20rem] xl:items-start'
+              : 'grid gap-8'
+          }
+        >
+          <div className="grid min-w-0 gap-8">
+            <TimelineCanvas
+              entries={entries}
+              window={viewWindow}
+              referenceTimeMs={timeline.referenceTimeMs}
+              liveNowMs={liveNowMs}
+              timezone={timezone}
+              selectedId={selectedId}
+              highlightedId={highlightedId}
+              onSelect={openEntryDetail}
+              onRevealEdge={handleRevealEdge}
+              clustering
+              registerMarkerRef={registerMarkerRef}
+            />
+            <TimelineLegend />
 
-          {overdueEntries.length === entries.length ? (
-            <TimelineNote>
-              All {entries.length} active {entries.length === 1 ? 'deadline is' : 'deadlines are'}{' '}
-              overdue.
-            </TimelineNote>
-          ) : null}
+            {overdueEntries.length === entries.length ? (
+              <TimelineNote>
+                All {entries.length} active{' '}
+                {entries.length === 1 ? 'deadline is' : 'deadlines are'} overdue.
+              </TimelineNote>
+            ) : null}
 
-          {overdueEntries.length === 0 && nextEntry ? (
-            <TimelineNote>
-              Nothing is overdue. Next: {nextEntry.item.title} ·{' '}
-              {formatCountdown(remainingSeconds(nextEntry, liveNowMs), nextEntry.urgency)}.
-            </TimelineNote>
-          ) : null}
+            {overdueEntries.length === 0 && nextEntry ? (
+              <TimelineNote>
+                Nothing is overdue. Next: {nextEntry.item.title} ·{' '}
+                {formatCountdown(remainingSeconds(nextEntry, liveNowMs), nextEntry.urgency)}.
+              </TimelineNote>
+            ) : null}
 
-          {timeline.isFetching ? (
-            <p className="text-xs text-muted-foreground" aria-live="polite">
-              Updating…
-            </p>
+            {timeline.isFetching ? (
+              <p className="text-xs text-muted-foreground" aria-live="polite">
+                Updating…
+              </p>
+            ) : null}
+          </div>
+
+          {selectedEntry && detailOpen ? (
+            <TimelineDetailShell
+              entry={selectedEntry}
+              currencyCode={data.currency_code}
+              timezone={timezone}
+              liveNowMs={liveNowMs}
+              onClose={closeDetail}
+              onComplete={(entry) => void handleComplete(entry)}
+              onEdit={(entry) => openEdit(entry.item)}
+              onDelete={(entry) => setDeletingItem(entry.item)}
+            />
           ) : null}
-        </>
+        </div>
       )}
 
       <div className="flex flex-wrap items-center gap-3 border-t border-border pt-4">

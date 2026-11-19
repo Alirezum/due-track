@@ -15,6 +15,7 @@ type TimelineClusterProps = {
   highlightedId?: number | null
   onSelect?: (entry: TimelineEntry) => void
   registerMarkerRef?: (id: number, node: HTMLButtonElement | null) => void
+  tabIndex?: number
 }
 
 export function TimelineCluster({
@@ -26,6 +27,7 @@ export function TimelineCluster({
   highlightedId = null,
   onSelect,
   registerMarkerRef,
+  tabIndex = 0,
 }: TimelineClusterProps) {
   const panelId = useId()
   const buttonRef = useRef<HTMLButtonElement>(null)
@@ -51,6 +53,7 @@ export function TimelineCluster({
       <button
         ref={buttonRef}
         type="button"
+        tabIndex={tabIndex}
         aria-expanded={isOpen}
         aria-controls={panelId}
         aria-label={`${entries.length} deadlines here`}
@@ -123,6 +126,7 @@ export function TimelineCluster({
                   <button
                     ref={(node) => registerMarkerRef?.(entry.item.id, node)}
                     type="button"
+                    tabIndex={0}
                     onClick={() => onSelect?.(entry)}
                     aria-current={selectedId === entry.item.id ? 'true' : undefined}
                     aria-label={entryAriaLabel(entry, liveNowMs, timezone)}

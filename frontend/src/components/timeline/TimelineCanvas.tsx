@@ -77,6 +77,10 @@ export function TimelineCanvas({
     [measuredWidth, visibleEntries, window],
   )
   const edges = useMemo(() => summarizeEdges(entries, window), [entries, window])
+  const rovingId =
+    visibleEntries.find((entry) => entry.item.id === selectedId)?.item.id ??
+    visibleEntries[0]?.item.id ??
+    null
 
   if (!isWide) {
     const overdue = visibleEntries.filter((entry) => entry.urgency === 'overdue')
@@ -110,6 +114,7 @@ export function TimelineCanvas({
               highlighted={highlightedId === entry.item.id}
               orientation="vertical"
               onSelect={onSelect}
+              tabIndex={entry.item.id === rovingId ? 0 : -1}
               buttonRef={(node) => registerMarkerRef?.(entry.item.id, node)}
             />
           </Fragment>
@@ -201,7 +206,7 @@ export function TimelineCanvas({
 
           <ol aria-label="Deadlines in chronological order" className="contents">
             {clustering
-              ? groups.map((group) =>
+              ? groups.map((group, groupIndex) =>
                   group.kind === 'cluster' ? (
                     <TimelineCluster
                       key={group.key}
@@ -213,6 +218,7 @@ export function TimelineCanvas({
                       highlightedId={highlightedId}
                       onSelect={onSelect}
                       registerMarkerRef={registerMarkerRef}
+                      tabIndex={selectedId === null && groupIndex === 0 ? 0 : -1}
                     />
                   ) : (
                     <TimelineMarker
@@ -224,6 +230,7 @@ export function TimelineCanvas({
                       selected={selectedId === group.entries[0].item.id}
                       highlighted={highlightedId === group.entries[0].item.id}
                       onSelect={onSelect}
+                      tabIndex={group.entries[0].item.id === rovingId ? 0 : -1}
                       buttonRef={(node) => registerMarkerRef?.(group.entries[0].item.id, node)}
                     />
                   ),
@@ -244,6 +251,7 @@ export function TimelineCanvas({
                     selected={selectedId === entry.item.id}
                     highlighted={highlightedId === entry.item.id}
                     onSelect={onSelect}
+                    tabIndex={entry.item.id === rovingId ? 0 : -1}
                     buttonRef={(node) => registerMarkerRef?.(entry.item.id, node)}
                   />
                 ))}

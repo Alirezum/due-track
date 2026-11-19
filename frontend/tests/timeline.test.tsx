@@ -473,6 +473,7 @@ describe('TimelinePage US2 horizons, edges, clusters, filters, and width', () =>
     const marker = await screen.findByRole('button', { name: /Overdue electricity/ })
     await user.click(marker)
     expect(marker).toHaveAttribute('aria-current', 'true')
+    await user.keyboard('{Escape}')
 
     await user.click(screen.getByRole('button', { name: '7d' }))
     const again = await screen.findByRole('button', { name: /Overdue electricity/ })
@@ -504,5 +505,361 @@ describe('TimelinePage US2 horizons, edges, clusters, filters, and width', () =>
     expect(rendered.length).toBeGreaterThan(0)
     expect(rendered.length).toBeLessThan(1000)
     expect(elapsed).toBeLessThan(2000)
+  })
+})
+
+function entryAt(
+  id: number,
+  title: string,
+  offsetMs: number,
+  overrides: Partial<Parameters<typeof makeTimelineEntry>[0]> = {},
+) {
+  return makeTimelineEntry({
+    id,
+    title,
+    dueAtUtc: new Date(FIXED_REFERENCE_MS + offsetMs).toISOString(),
+    urgency: offsetMs < 0 ? 'overdue' : offsetMs < 3_600_000 ? 'within_24h' : 'within_7d',
+    ...overrides,
+  })
+}
+
+const HOUR = 3_600_000
+const DAY = 24 * HOUR
+
+describe('TimelinePage US3 details, actions, and keyboard', () => {
+  it('opens the detail dialog with the full deadline record', async () => {
+    const user = userEvent.setup()
+    const entry = entryAt(60, 'Rent payment', 2 * DAY, {
+      category: 'Bills',
+      priority: 'high',
+      amountCents: 120_000,
+      recurrenceFreq: 'monthly',
+      recurrenceInterval: 1,
+      recurrenceAnchorMode: 'fixed_day_of_month',
+      recurrenceAnchorDay: 2,
+      recurrenceEndDate: '2027-11-05',
+      recurrenceRemainingCount: 5,
+      notes: 'Pay by transfer before the office closes.',
+    })
+    renderTimeline(makeTimelineResponse([entry]))
+
+    await user.click(await screen.findByRole('button', { name: /Rent payment/ }))
+    const dialog = await screen.findByRole('dialog', { name: 'Deadline details' })
+
+    expect(within(dialog).getByText('Rent payment')).toBeInTheDocument()
+    expect(within(dialog).getByText(/\$1,200\.00/)).toBeInTheDocument()
+    expect(within(dialog).getByText('Repeats monthly')).toBeInTheDocument()
+    expect(within(dialog).getByText(/Day 2 of the month/)).toBeInTheDocument()
+    expect(within(dialog).getByText(/5 occurrences remain/)).toBeInTheDocument()
+    expect(within(dialog).getByText(/Ends Nov 5, 2027/)).toBeInTheDocument()
+    expect(
+      within(dialog).getByText('Pay by transfer before the office closes.'),
+    ).toBeInTheDocument()
+    expect(within(dialog).getAllByText(/November 7/).length).toBeGreaterThan(0)
+    expect(within(dialog).getAllByText(/in 2d/).length).toBeGreaterThan(0)
+    expect(
+      within(dialog).getByRole('button', { name: 'Complete Rent payment' }),
+    ).toBeInTheDocument()
+    expect(
+      within(dialog).getByRole('button', { name: 'Edit Rent payment' }),
+    ).toBeInTheDocument()
+    expect(
+      within(dialog).getByRole('button', { name: 'Delete Rent payment' }),
+    ).toBeInTheDocument()
+  })
+
+  it('edits in place and keeps the entry selected', async () => {
+    const user = userEvent.setup()
+    const original = entryAt(61, 'Original title', 2 * HOUR, { category: 'Home' })
+    const revised = {
+      ...original,
+      item: { ...original.item, title: 'Revised title' },
+    }
+    let revisedOnServer = false
+
+    const { fetchMock } = renderTimeline((url, init) => {
+      if (url === '/api/items/61' && init.method === 'PATCH') {
+        revisedOnServer = true
+        return jsonResponse(revised.item)
+      }
+      if (url.startsWith('/api/timeline')) {
+        return jsonResponse(makeTimelineResponse([revisedOnServer ? revised : original]))
+      }
+      return jsonResponse(EMPTY_ITEMS)
+    })
+
+    await user.click(await screen.findByRole('button', { name: /Original title/ }))
+    const detail = await screen.findByRole('dialog', { name: 'Deadline details' })
+    await user.click(within(detail).getByRole('button', { name: 'Edit Original title' }))
+
+    const editDialog = await screen.findByRole('dialog', { name: 'Edit deadline' })
+    const title = within(editDialog).getByLabelText('Title')
+    await user.clear(title)
+    await user.type(title, 'Revised title')
+    await user.click(within(editDialog).getByRole('button', { name: 'Save changes' }))
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/items/61',
+        expect.objectContaining({ method: 'PATCH' }),
+      ),
+    )
+    await waitFor(() =>
+      expect(
+        document.querySelector('[data-timeline-marker][data-entry-id="61"]'),
+      ).not.toBeNull(),
+    )
+    const marker = document.querySelector<HTMLElement>(
+      '[data-timeline-marker][data-entry-id="61"]',
+    )
+    expect(marker).toHaveAttribute('aria-current', 'true')
+    expect(marker).toHaveTextContent('Revised title')
+  })
+
+  it('completes an entry, closes details, and focuses the next deadline', async () => {
+    const user = userEvent.setup()
+    const first = entryAt(70, 'Alpha task', HOUR)
+    const second = entryAt(71, 'Beta task', 2 * HOUR)
+    const third = entryAt(72, 'Gamma task', 3 * HOUR)
+    let completed = false
+
+    const { fetchMock } = renderTimeline((url, init) => {
+      if (url === '/api/items/70/complete' && init.method === 'POST') {
+        completed = true
+        return jsonResponse({ log: { id: 1 }, item: null })
+      }
+      if (url.startsWith('/api/timeline')) {
+        return jsonResponse(
+          makeTimelineResponse(completed ? [second, third] : [first, second, third]),
+        )
+      }
+      return jsonResponse(EMPTY_ITEMS)
+    })
+
+    await user.click(await screen.findByRole('button', { name: /Alpha task/ }))
+    const detail = await screen.findByRole('dialog', { name: 'Deadline details' })
+    await user.click(within(detail).getByRole('button', { name: 'Complete Alpha task' }))
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/items/70/complete',
+        expect.objectContaining({ method: 'POST' }),
+      ),
+    )
+    expect(await screen.findByText('Completed Alpha task.')).toBeInTheDocument()
+    const beta = await screen.findByRole('button', { name: /Beta task/ })
+    await waitFor(() => expect(beta).toHaveFocus())
+    expect(beta).toHaveAttribute('aria-current', 'true')
+    expect(screen.queryByRole('dialog', { name: 'Deadline details' })).not.toBeInTheDocument()
+  })
+
+  it('confirms deletion, allows cancel, and focuses the nearest remaining deadline', async () => {
+    const user = userEvent.setup()
+    const first = entryAt(80, 'Alpha delete', HOUR)
+    const second = entryAt(81, 'Beta delete', 2 * HOUR)
+    const third = entryAt(82, 'Gamma delete', 3 * HOUR)
+    let deleted = false
+
+    const { fetchMock } = renderTimeline((url, init) => {
+      if (url === '/api/items/81' && init.method === 'DELETE') {
+        deleted = true
+        return new Response(null, { status: 204 })
+      }
+      if (url.startsWith('/api/timeline')) {
+        return jsonResponse(
+          makeTimelineResponse(deleted ? [first, third] : [first, second, third]),
+        )
+      }
+      return jsonResponse(EMPTY_ITEMS)
+    })
+
+    await waitFor(() =>
+      expect(
+        document.querySelector('[data-timeline-marker][data-entry-id="81"]'),
+      ).not.toBeNull(),
+    )
+    await user.click(
+      document.querySelector<HTMLElement>('[data-timeline-marker][data-entry-id="81"]')!,
+    )
+    const detail = await screen.findByRole('dialog', { name: 'Deadline details' })
+    await user.click(within(detail).getByRole('button', { name: 'Delete Beta delete' }))
+
+    const confirm = await screen.findByRole('alertdialog', { name: 'Delete deadline?' })
+    await user.click(within(confirm).getByRole('button', { name: 'Cancel' }))
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      '/api/items/81',
+      expect.objectContaining({ method: 'DELETE' }),
+    )
+    expect(
+      within(detail).getByRole('button', { name: 'Delete Beta delete' }),
+    ).toBeInTheDocument()
+
+    await user.click(within(detail).getByRole('button', { name: 'Delete Beta delete' }))
+    const confirmAgain = await screen.findByRole('alertdialog', {
+      name: 'Delete deadline?',
+    })
+    await user.click(within(confirmAgain).getByRole('button', { name: 'Delete deadline' }))
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/items/81',
+        expect.objectContaining({ method: 'DELETE' }),
+      ),
+    )
+    expect(await screen.findByText('Deleted Beta delete.')).toBeInTheDocument()
+    const gamma = await screen.findByRole('button', { name: /Gamma delete/ })
+    await waitFor(() => expect(gamma).toHaveFocus())
+    expect(gamma).toHaveAttribute('aria-current', 'true')
+  })
+
+  it('selects and highlights a created deadline that matches the filters', async () => {
+    const user = userEvent.setup()
+    const created = entryAt(90, 'New ledger item', 3 * HOUR)
+    let createdOnServer = false
+    const { fetchMock } = renderTimeline((url, init) => {
+      if (url === '/api/items' && init.method === 'POST') {
+        createdOnServer = true
+        return jsonResponse(created.item, 201)
+      }
+      if (url.startsWith('/api/timeline')) {
+        return jsonResponse(makeTimelineResponse(createdOnServer ? [created] : []))
+      }
+      return jsonResponse(EMPTY_ITEMS)
+    })
+
+    const empty = await screen.findByRole('region', { name: 'Empty timeline' })
+    await user.click(within(empty).getByRole('button', { name: 'New deadline' }))
+    const dialog = await screen.findByRole('dialog', { name: 'New deadline' })
+    await user.type(within(dialog).getByLabelText('Title'), 'New ledger item')
+    await user.click(within(dialog).getByRole('button', { name: 'Create deadline' }))
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/items',
+        expect.objectContaining({ method: 'POST' }),
+      ),
+    )
+    const marker = await screen.findByRole('button', { name: /New ledger item/ })
+    expect(marker).toHaveAttribute('aria-current', 'true')
+    expect(marker).toHaveAttribute('data-highlighted', 'true')
+    expect(
+      await screen.findByText('Added New ledger item. Highlighted on the timeline.'),
+    ).toBeInTheDocument()
+  })
+
+  it('keeps a filter-excluded created deadline in a persistent notice with Clear filters', async () => {
+    const user = userEvent.setup()
+    const bills = entryAt(91, 'Existing bill', 2 * HOUR, { category: 'Bills' })
+    const created = entryAt(92, 'New home task', 3 * HOUR, { category: 'Home' })
+    let createdOnServer = false
+
+    renderTimeline((url, init) => {
+      if (url === '/api/items' && init.method === 'POST') {
+        createdOnServer = true
+        return jsonResponse(created.item, 201)
+      }
+      if (url.startsWith('/api/timeline')) {
+        const parsed = new URL(url, 'http://localhost')
+        const onlyBills = parsed.searchParams.get('category') === 'Bills'
+        return jsonResponse(
+          makeTimelineResponse(
+            createdOnServer && !onlyBills ? [bills, created] : [bills],
+          ),
+        )
+      }
+      return jsonResponse(EMPTY_ITEMS)
+    })
+
+    await screen.findByRole('list', { name: 'Deadlines in chronological order' })
+    const category = await screen.findByLabelText('Category')
+    await user.type(category, 'Bills')
+    await screen.findByRole('button', { name: /Existing bill/ })
+
+    await user.click(screen.getAllByRole('button', { name: 'New deadline' })[0])
+    const dialog = await screen.findByRole('dialog', { name: 'New deadline' })
+    await user.type(within(dialog).getByLabelText('Title'), 'New home task')
+    await user.click(within(dialog).getByRole('button', { name: 'Create deadline' }))
+
+    const notice = await screen.findByTestId('filter-exclusion-notice')
+    expect(
+      within(notice).getByText('Saved “New home task”, but the current filters hide it.'),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /New home task/ })).not.toBeInTheDocument()
+
+    await user.click(within(notice).getByRole('button', { name: 'Clear filters' }))
+    const marker = await screen.findByRole('button', { name: /New home task/ })
+    expect(marker).toHaveAttribute('aria-current', 'true')
+    expect(marker).toHaveAttribute('data-highlighted', 'true')
+    expect(screen.getByRole('button', { name: '30d' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.queryByTestId('filter-exclusion-notice')).not.toBeInTheDocument()
+  })
+
+  it('supports J, K, Home, End, Enter, Esc, E, Delete, and C from the keyboard', async () => {
+    const user = userEvent.setup()
+    const first = entryAt(100, 'Keyboard alpha', HOUR)
+    const second = entryAt(101, 'Keyboard beta', 2 * HOUR)
+    const third = entryAt(102, 'Keyboard gamma', 3 * HOUR)
+    let completed = false
+
+    renderTimeline((url, init) => {
+      if (url === '/api/items/100/complete' && init.method === 'POST') {
+        completed = true
+        return jsonResponse({ log: { id: 1 }, item: null })
+      }
+      if (url.startsWith('/api/timeline')) {
+        return jsonResponse(
+          makeTimelineResponse(completed ? [second, third] : [first, second, third]),
+        )
+      }
+      return jsonResponse(EMPTY_ITEMS)
+    })
+
+    await screen.findByRole('list', { name: 'Deadlines in chronological order' })
+
+    const marker = (name: RegExp) => screen.getByRole('button', { name })
+    const current = () =>
+      screen
+        .getAllByRole('button')
+        .find((button) => button.getAttribute('aria-current') === 'true')
+
+    await user.keyboard('j')
+    expect(marker(/Keyboard alpha/)).toHaveAttribute('aria-current', 'true')
+    await user.keyboard('j')
+    expect(marker(/Keyboard beta/)).toHaveAttribute('aria-current', 'true')
+    await user.keyboard('k')
+    expect(marker(/Keyboard alpha/)).toHaveAttribute('aria-current', 'true')
+    await user.keyboard('{End}')
+    expect(marker(/Keyboard gamma/)).toHaveAttribute('aria-current', 'true')
+    await user.keyboard('{Home}')
+    expect(marker(/Keyboard alpha/)).toHaveAttribute('aria-current', 'true')
+    expect(current()).toBe(marker(/Keyboard alpha/))
+
+    await user.keyboard('{Enter}')
+    expect(
+      await screen.findByRole('dialog', { name: 'Deadline details' }),
+    ).toBeInTheDocument()
+    await user.keyboard('{Escape}')
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('dialog', { name: 'Deadline details' }),
+      ).not.toBeInTheDocument(),
+    )
+    await waitFor(() => expect(marker(/Keyboard alpha/)).toHaveFocus())
+
+    await user.keyboard('e')
+    expect(await screen.findByRole('dialog', { name: 'Edit deadline' })).toBeInTheDocument()
+    await user.keyboard('{Escape}')
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'Edit deadline' })).not.toBeInTheDocument(),
+    )
+
+    await user.keyboard('{Delete}')
+    const confirm = await screen.findByRole('alertdialog', { name: 'Delete deadline?' })
+    await user.click(within(confirm).getByRole('button', { name: 'Cancel' }))
+
+    await user.keyboard('c')
+    const beta = await screen.findByRole('button', { name: /Keyboard beta/ })
+    await waitFor(() => expect(beta).toHaveFocus())
+    expect(beta).toHaveAttribute('aria-current', 'true')
   })
 })
