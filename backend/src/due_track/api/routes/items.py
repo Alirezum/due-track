@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from dataclasses import asdict
 from datetime import date, datetime
 from typing import Any, cast
@@ -33,6 +34,7 @@ from due_track.api.time import (
 )
 from due_track.config import Settings
 from due_track.db.history_repository import (
+    CompletionLogRecord,
     completion_transaction,
     get_latest_completion_log,
     insert_completion_log,
@@ -358,10 +360,44 @@ def complete_item(
     )
 
 
+def _recomputed_due_utc(
+    *,
+    record: ItemRecord,
+    latest_log: CompletionLogRecord,
+    tz: ZoneInfo,
+    recurrence_freq: str,
+    recurrence_interval: int,
+    recurrence_anchor_mode: str,
+    recurrence_anchor_day: int | None,
+    recurrence_end_date: date | None,
+) -> datetime | None:
+    anchor_local = utc_to_local(latest_log.scheduled_due_at_utc, tz)
+    completion_local = utc_to_local(latest_log.completed_at_utc, tz)
+    next_local = next_occurrence(
+        current_due_at_utc=latest_log.scheduled_due_at_utc,
+        completion_at_utc=latest_log.completed_at_utc,
+        current_local_date=anchor_local.date(),
+        current_local_time=None if record.is_date_only else anchor_local.time(),
+        completion_local_date=completion_local.date(),
+        completion_local_time=completion_local.time(),
+        recurrence_freq=recurrence_freq,
+        recurrence_interval=recurrence_interval,
+        recurrence_anchor_mode=recurrence_anchor_mode,
+        recurrence_anchor_day=recurrence_anchor_day,
+        end_local_date=recurrence_end_date,
+    )
+    if next_local is None:
+        return None
+    if next_local.local_time is None:
+        return end_of_local_day_to_utc(next_local.local_date, tz)
+    return local_to_utc(datetime.combine(next_local.local_date, next_local.local_time), tz)
+
+
 def _updated_values(
     *,
     record: ItemRecord,
     payload: ItemUpdate,
+    connection: sqlite3.Connection,
     tz: ZoneInfo,
     now: datetime,
 ) -> dict[str, Any]:
@@ -463,6 +499,29 @@ def _updated_values(
         )
         values["recurrence_remaining_count"] = recurrence_remaining_count
 
+    if provided & RECURRENCE_FIELDS and recurrence_freq != "none":
+        latest_log = get_latest_completion_log(connection, record.id)
+        touched = "due" in provided or (
+            latest_log is not None and record.updated_at_utc > latest_log.completed_at_utc
+        )
+        if latest_log is not None and not touched:
+            recomputed_due = _recomputed_due_utc(
+                record=record,
+                latest_log=latest_log,
+                tz=tz,
+                recurrence_freq=recurrence_freq,
+                recurrence_interval=recurrence_interval,
+                recurrence_anchor_mode=recurrence_anchor_mode,
+                recurrence_anchor_day=recurrence_anchor_day,
+                recurrence_end_date=recurrence_end_date,
+            )
+            if recomputed_due is None:
+                values["status"] = "completed"
+                if recurrence_remaining_count is not None:
+                    values["recurrence_remaining_count"] = 0
+            else:
+                values["due_at_utc"] = recomputed_due
+
     return values
 
 
@@ -479,7 +538,13 @@ def patch_item(
         raise _not_found(item_id)
 
     tz = _zone(settings)
-    values = _updated_values(record=record, payload=payload, tz=tz, now=now)
+    values = _updated_values(
+        record=record,
+        payload=payload,
+        connection=connection,
+        tz=tz,
+        now=now,
+    )
     updated = update_item(connection, item_id, values)
     if updated is None:
         raise _not_found(item_id)
