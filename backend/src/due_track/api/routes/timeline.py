@@ -10,7 +10,7 @@ from due_track.api.schemas import TimelineEntry, TimelineResponse
 from due_track.api.serializers import record_to_due_item
 from due_track.db.items_repository import list_active_items
 from due_track.domain.sorting import sort_key
-from due_track.domain.timeline import classify_urgency, seconds_until_due
+from due_track.domain.timeline import Urgency, classify_urgency, seconds_until_due
 
 router = APIRouter(prefix="/timeline", tags=["Timeline"])
 
@@ -42,9 +42,14 @@ def get_timeline(
         for item in items
     ]
 
+    overdue_count = sum(1 for entry in entries if entry.urgency == Urgency.OVERDUE)
+    if filters.scope == "upcoming":
+        entries = [entry for entry in entries if entry.urgency != Urgency.OVERDUE]
+
     return TimelineResponse(
         reference_time_utc=now,
         timezone=settings.timezone,
         currency_code=settings.currency,
+        overdue_count=overdue_count,
         entries=entries,
     )

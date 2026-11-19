@@ -266,3 +266,162 @@ def test_invalid_filters_return_422(client: TestClient, params: dict[str, str]) 
     response = client.get("/api/timeline", params=params)
 
     assert response.status_code == 422, response.text
+
+
+def test_scope_upcoming_omits_overdue_entries_but_keeps_an_accurate_count(
+    client: TestClient, migrated_database: Path
+) -> None:
+    connection = connect(migrated_database)
+    try:
+        overdue = insert_timeline_item(
+            connection,
+            title="Overdue",
+            due_at_utc=REFERENCE - DAY,
+        )
+        due_now = insert_timeline_item(
+            connection,
+            title="Due now",
+            due_at_utc=REFERENCE,
+        )
+        date_only_today = insert_timeline_item(
+            connection,
+            title="Today date-only",
+            due_at_utc=datetime(2026, 11, 6, 4, 59, 59, 999999, tzinfo=UTC),
+            is_date_only=True,
+        )
+        future = insert_timeline_item(
+            connection,
+            title="Future",
+            due_at_utc=REFERENCE + DAY,
+        )
+    finally:
+        connection.close()
+
+    all_body = client.get("/api/timeline").json()
+    response = client.get("/api/timeline", params={"scope": "upcoming"})
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    all_overdue = [entry for entry in all_body["entries"] if entry["urgency"] == "overdue"]
+    assert [entry["item"]["id"] for entry in all_overdue] == [overdue]
+    assert all_body["overdue_count"] == 1
+    assert body["overdue_count"] == 1
+    assert [entry["item"]["id"] for entry in body["entries"]] == [
+        due_now,
+        date_only_today,
+        future,
+    ]
+    assert all(entry["urgency"] != "overdue" for entry in body["entries"])
+    assert body["reference_time_utc"] == all_body["reference_time_utc"]
+    assert body["timezone"] == all_body["timezone"]
+    assert body["currency_code"] == all_body["currency_code"]
+
+
+def test_scope_upcoming_treats_due_now_and_today_date_only_as_upcoming(
+    client: TestClient, migrated_database: Path
+) -> None:
+    connection = connect(migrated_database)
+    try:
+        insert_timeline_item(connection, title="Due now", due_at_utc=REFERENCE)
+        insert_timeline_item(
+            connection,
+            title="Today date-only",
+            due_at_utc=datetime(2026, 11, 6, 4, 59, 59, 999999, tzinfo=UTC),
+            is_date_only=True,
+        )
+    finally:
+        connection.close()
+
+    body = client.get("/api/timeline", params={"scope": "upcoming"}).json()
+
+    assert body["overdue_count"] == 0
+    assert [entry["item"]["title"] for entry in body["entries"]] == [
+        "Due now",
+        "Today date-only",
+    ]
+    assert body["entries"][0]["urgency"] == "due_now"
+
+
+def test_scope_upcoming_combines_with_filters_and_counts_the_filtered_overdue_set(
+    client: TestClient, migrated_database: Path
+) -> None:
+    connection = connect(migrated_database)
+    try:
+        insert_timeline_item(
+            connection,
+            title="Overdue bill",
+            due_at_utc=REFERENCE - DAY,
+            category="Bills",
+            priority="high",
+        )
+        insert_timeline_item(
+            connection,
+            title="Overdue health",
+            due_at_utc=REFERENCE - DAY,
+            category="Health",
+            priority="high",
+        )
+        upcoming_bill = insert_timeline_item(
+            connection,
+            title="Upcoming bill",
+            due_at_utc=REFERENCE + DAY,
+            category="Bills",
+            priority="high",
+        )
+        insert_timeline_item(
+            connection,
+            title="Upcoming health",
+            due_at_utc=REFERENCE + DAY,
+            category="Health",
+            priority="high",
+        )
+    finally:
+        connection.close()
+
+    body = client.get(
+        "/api/timeline",
+        params={"scope": "upcoming", "category": "Bills", "priority": "high"},
+    ).json()
+
+    assert body["overdue_count"] == 1
+    assert [entry["item"]["id"] for entry in body["entries"]] == [upcoming_bill]
+
+
+def test_scope_upcoming_empty_result_returns_zero_count(client: TestClient) -> None:
+    body = client.get("/api/timeline", params={"scope": "upcoming"}).json()
+
+    assert body["entries"] == []
+    assert body["overdue_count"] == 0
+
+
+def test_scope_upcoming_respects_the_application_timezone_boundary(
+    client: TestClient, migrated_database: Path
+) -> None:
+    connection = connect(migrated_database)
+    try:
+        insert_timeline_item(
+            connection,
+            title="Local yesterday date-only",
+            due_at_utc=datetime(2026, 11, 5, 4, 59, 59, 999999, tzinfo=UTC),
+            is_date_only=True,
+        )
+        insert_timeline_item(
+            connection,
+            title="Local today date-only",
+            due_at_utc=datetime(2026, 11, 6, 4, 59, 59, 999999, tzinfo=UTC),
+            is_date_only=True,
+        )
+        insert_timeline_item(
+            connection,
+            title="One second before now",
+            due_at_utc=REFERENCE - timedelta(seconds=1),
+        )
+    finally:
+        connection.close()
+
+    body = client.get("/api/timeline", params={"scope": "upcoming"}).json()
+
+    assert body["overdue_count"] == 2
+    assert [entry["item"]["title"] for entry in body["entries"]] == [
+        "Local today date-only",
+    ]

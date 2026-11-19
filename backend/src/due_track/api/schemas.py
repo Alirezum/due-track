@@ -237,7 +237,7 @@ class TimelineResponse(StrictModel):
     reference_time_utc: datetime
     timezone: str
     currency_code: str
-    overdue_count: int = 0
+    overdue_count: int = Field(ge=0)
     entries: list[TimelineEntry]
 
 
