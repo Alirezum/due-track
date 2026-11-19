@@ -7,7 +7,7 @@ from fastapi import APIRouter, FastAPI
 
 from due_track.api.deps import get_app_settings
 from due_track.api.errors import register_error_handlers
-from due_track.api.routes import items
+from due_track.api.routes import history, items
 from due_track.config import Settings, get_settings
 from due_track.db.connection import connect
 from due_track.db.migrate import apply_migrations
@@ -33,6 +33,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.dependency_overrides[get_app_settings] = lambda: resolved_settings
     api_router = APIRouter(prefix="/api")
     api_router.include_router(items.router)
+    api_router.include_router(history.router)
     app.include_router(api_router)
     register_error_handlers(app)
     return app
