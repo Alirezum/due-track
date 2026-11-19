@@ -187,7 +187,7 @@
 
 ### Tests for User Story 5 (required)
 
-- [ ] T071 [P] [US5] Write keyboard shortcut tests in `frontend/tests/shortcuts.test.tsx` for N quick-add focusing the title, `/` search, J/K navigation with visible active state, Enter open, C complete, E edit, Delete confirmation, `?` help, Esc close, and suppression while typing in inputs/textarea/contenteditable.
+- [X] T071 [P] [US5] Write keyboard shortcut tests in `frontend/tests/shortcuts.test.tsx` for N quick-add focusing the title, `/` search, J/K navigation with visible active state, Enter open, C complete, E edit, Delete confirmation, `?` help, Esc close, and suppression while typing in inputs/textarea/contenteditable.
 
 ### Implementation for User Story 5
 
