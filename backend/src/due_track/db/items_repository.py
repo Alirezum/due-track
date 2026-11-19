@@ -58,6 +58,10 @@ def _serialize(value: object) -> object:
     return value
 
 
+def _escape_like(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 def _row_to_record(row: sqlite3.Row) -> ItemRecord:
     end_at = row["recurrence_end_at_utc"]
     return ItemRecord(
@@ -114,9 +118,33 @@ def get_item(connection: sqlite3.Connection, item_id: int) -> ItemRecord | None:
     return _select_by_id(connection, item_id)
 
 
-def list_active_items(connection: sqlite3.Connection) -> list[ItemRecord]:
+def list_active_items(
+    connection: sqlite3.Connection,
+    *,
+    category: str | None = None,
+    priority: str | None = None,
+    recurring: bool | None = None,
+    q: str | None = None,
+) -> list[ItemRecord]:
+    clauses = ["status = 'active'"]
+    parameters: list[object] = []
+
+    if category is not None:
+        clauses.append("LOWER(category) = LOWER(?)")
+        parameters.append(category)
+    if priority is not None:
+        clauses.append("priority = ?")
+        parameters.append(priority)
+    if recurring is not None:
+        clauses.append("recurrence_freq != 'none'" if recurring else "recurrence_freq = 'none'")
+    if q:
+        pattern = f"%{_escape_like(q)}%"
+        clauses.append("(title LIKE ? ESCAPE '\\' OR notes LIKE ? ESCAPE '\\')")
+        parameters.extend((pattern, pattern))
+
     rows = connection.execute(
-        f"SELECT {', '.join(ITEM_COLUMNS)} FROM due_items WHERE status = 'active'"
+        f"SELECT {', '.join(ITEM_COLUMNS)} FROM due_items WHERE {' AND '.join(clauses)}",
+        tuple(parameters),
     ).fetchall()
     return [_row_to_record(row) for row in rows]
 
