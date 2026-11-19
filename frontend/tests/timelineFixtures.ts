@@ -91,6 +91,7 @@ export function makeTimelineResponse(
     reference_time_utc: FIXED_REFERENCE,
     timezone: TIMELINE_TIMEZONE,
     currency_code: TIMELINE_CURRENCY,
+    overdue_count: entries.filter((entry) => entry.urgency === 'overdue').length,
     entries,
     ...overrides,
   }
