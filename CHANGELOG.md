@@ -5,6 +5,38 @@ All notable changes to due-track are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-11-13
+
+### Added
+
+- Upcoming-only default for the Dashboard and Timeline. Both pages request `scope=upcoming`, so
+  overdue deadlines stay out of the primary views until the user reveals them.
+- One-action overdue indicator with a server-authoritative filtered count, `aria-expanded` /
+  `aria-controls` semantics, keyboard operation, focus handoff, and polite announcements. The reveal
+  state is page-local, resets on navigation, and performs no writes.
+- Shared `scope` query parameter (`upcoming | all`, default `all`) on `GET /api/items` and
+  `GET /api/timeline`, plus the required `overdue_count` scalar on `TimelineResponse`.
+- 1,000-item backend performance coverage for mixed overdue/future items through both upcoming-scope
+  endpoints.
+
+### Changed
+
+- The Dashboard summary replaces the money total with a `Next 7 days` count derived from the 7-day
+  bucket, alongside the existing `Due today` and `Overdue` counts.
+- Deadline cards and timeline details no longer render amounts or currency. Stored `amount_cents`
+  remains editable, History still displays it, and `summary.upcoming_total_cents` /
+  `currency_code` remain in API responses for compatibility.
+- Overdue records remain fully reachable and retain their edit, complete, delete, history, and undo
+  behavior; completing or editing one updates the count on the next read.
+- Living OpenAPI contract and FastAPI app version advance to `1.2.0`. Requests remain backward
+  compatible because `scope` defaults to `all`; strict 1.1.0 `TimelineResponse` validators with
+  `additionalProperties: false` must accept the new required `overdue_count` field.
+
+### Data model
+
+- No migration and no new table. Upcoming focus is a read-time projection over existing
+  `due_items` columns, and no deadline records are mutated by revealing or hiding overdue items.
+
 ## [1.1.0] - 2026-11-05
 
 ### Added
