@@ -145,6 +145,7 @@ export function ItemCard({
             variant="secondary"
             onClick={() => onComplete(item)}
             disabled={isCompleting}
+            aria-label={isCompleting ? 'Completing…' : `Complete ${item.title}`}
           >
             {isCompleting ? 'Completing…' : 'Complete'}
           </Button>

@@ -13,6 +13,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { useCompleteItem } from '@/hooks/useCompleteItem'
 import { useCreateItem, useDeleteItem, useItems, useUpdateItem } from '@/hooks/useItems'
 import { formatAmount } from '@/lib/format'
 
@@ -33,10 +34,12 @@ export function DashboardPage() {
   const createItem = useCreateItem()
   const updateItem = useUpdateItem()
   const deleteItem = useDeleteItem()
+  const completeItem = useCompleteItem()
 
   const [createOpen, setCreateOpen] = useState(false)
   const [editingItem, setEditingItem] = useState<DueItem | null>(null)
   const [deletingItem, setDeletingItem] = useState<DueItem | null>(null)
+  const [completingItemId, setCompletingItemId] = useState<number | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
   const [pageError, setPageError] = useState<string | null>(null)
 
@@ -70,6 +73,18 @@ export function DashboardPage() {
       setEditingItem(null)
     } catch (error) {
       setFormError(describeError(error))
+    }
+  }
+
+  async function handleComplete(item: DueItem) {
+    setPageError(null)
+    setCompletingItemId(item.id)
+    try {
+      await completeItem.mutateAsync(item.id)
+    } catch (error) {
+      setPageError(describeError(error))
+    } finally {
+      setCompletingItemId(null)
     }
   }
 
@@ -171,6 +186,8 @@ export function DashboardPage() {
             currencyCode={currencyCode}
             onEdit={openEdit}
             onDelete={setDeletingItem}
+            onComplete={(item) => void handleComplete(item)}
+            completingItemId={completingItemId}
           />
           <BucketSection
             id="due-today"
@@ -181,6 +198,8 @@ export function DashboardPage() {
             currencyCode={currencyCode}
             onEdit={openEdit}
             onDelete={setDeletingItem}
+            onComplete={(item) => void handleComplete(item)}
+            completingItemId={completingItemId}
           />
         </div>
         <div className="grid content-start gap-10">
@@ -193,6 +212,8 @@ export function DashboardPage() {
             currencyCode={currencyCode}
             onEdit={openEdit}
             onDelete={setDeletingItem}
+            onComplete={(item) => void handleComplete(item)}
+            completingItemId={completingItemId}
           />
           <BucketSection
             id="later"
@@ -203,6 +224,8 @@ export function DashboardPage() {
             currencyCode={currencyCode}
             onEdit={openEdit}
             onDelete={setDeletingItem}
+            onComplete={(item) => void handleComplete(item)}
+            completingItemId={completingItemId}
           />
         </div>
       </div>
