@@ -124,7 +124,7 @@
 - [X] T050 [US2] Extend PATCH `/api/items/{item_id}` in `backend/src/due_track/api/routes/items.py` to recalculate the current occurrence immediately when recurrence policy changes, using boundary-supplied local inputs and the latest completion log for the anchor, preserving a manually edited occurrence (`updated_at_utc > completed_at_utc`), and ending the series when the new policy has no valid next occurrence.
 - [X] T051 [P] [US2] Implement `frontend/src/hooks/useCompleteItem.ts` with a TanStack Query mutation for `POST /api/items/{id}/complete` and invalidation of the items query.
 - [X] T052 [US2] Add a complete button to `frontend/src/components/ItemCard.tsx` that calls the completion mutation, shows a pending state, and refreshes the dashboard.
-- [ ] T053 [US2] Run the US2 quality gates from `specs/001-due-track-v1/plan.md` and the completion tests in `backend/tests/integration/api/test_completion.py` and `frontend/tests/completion.test.tsx`.
+- [X] T053 [US2] Run the US2 quality gates from `specs/001-due-track-v1/plan.md` and the completion tests in `backend/tests/integration/api/test_completion.py` and `frontend/tests/completion.test.tsx`.
 
 **Checkpoint**: User Stories 1 and 2 work independently; recurring completion is reliable.
 
