@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: due-track API
-  version: 1.1.0
+  version: 1.2.0
   description: |
     Local-first, single-user deadline and obligation tracker.
 
@@ -17,6 +17,15 @@ info:
     Version 1.1.0 is an additive MINOR amendment: it adds the read-only
     `GET /api/timeline` projection with server-computed urgency and reference time.
     No existing path, schema, or behavior changes.
+
+    Version 1.2.0 is an additive MINOR amendment: it adds the shared `scope` query
+    parameter (`upcoming | all`, default `all`) to `GET /api/items` and
+    `GET /api/timeline`, and adds the required `overdue_count` scalar to
+    `TimelineResponse`. Requests remain backward compatible because `scope` defaults
+    to `all`; strict 1.1.0 response validators (`additionalProperties: false`) must
+    update to the 1.2.0 schema because `TimelineResponse` gains one required field.
+    No path or existing field is removed or retyped, and no data migration is
+    involved.
   termsOfService: http://127.0.0.1:8000/
   contact:
     name: due-track
@@ -54,7 +63,14 @@ paths:
         Each bucket is sorted by due date ascending, then priority descending
         (`critical` > `high` > `medium` > `low`), then title ascending
         (case-insensitively). Filters combine with AND semantics.
+
+        `scope=all` (the default) returns every filtered active item in exactly one
+        bucket. `scope=upcoming` returns the same due-today, upcoming, and later
+        buckets, sets `buckets.overdue` to `[]`, and keeps
+        `summary.overdue_count` as the accurate count of filtered active overdue
+        items before omission.
       parameters:
+        - $ref: '#/components/parameters/Scope'
         - name: category
           in: query
           required: false
@@ -233,7 +249,13 @@ paths:
 
         Filters combine with AND semantics and match `GET /api/items` exactly.
         Completed and deleted items never appear. An empty result returns `entries: []`.
+
+        `scope=all` (the default) returns every filtered active item. `scope=upcoming`
+        omits entries whose `urgency` is `overdue` and keeps `overdue_count` as the
+        accurate count of filtered active overdue items before omission. `overdue_count`
+        is independent of `scope`.
       parameters:
+        - $ref: '#/components/parameters/Scope'
         - name: category
           in: query
           required: false
@@ -276,6 +298,7 @@ paths:
                     reference_time_utc: '2026-11-05T17:00:00Z'
                     timezone: America/New_York
                     currency_code: USD
+                    overdue_count: 1
                     entries:
                       - item:
                           id: 4
@@ -409,6 +432,20 @@ paths:
 
 components:
   parameters:
+    Scope:
+      name: scope
+      in: query
+      required: false
+      description: |
+        View scope shared by both read endpoints. `all` (the default) preserves the
+        pre-1.2.0 payload. `upcoming` means `due_at_utc >= reference_time_utc`:
+        overdue entries are omitted from the primary view while the server-computed
+        overdue count stays accurate. This is a view projection, not a data filter,
+        and never mutates records. Invalid values return `422`.
+      schema:
+        type: string
+        enum: [upcoming, all]
+        default: all
     ItemId:
       name: item_id
       in: path
@@ -768,6 +805,10 @@ components:
       properties:
         overdue:
           type: array
+          description: |
+            Every filtered active overdue item when `scope=all` (the default). Always
+            empty when `scope=upcoming`; `summary.overdue_count` remains the accurate
+            filtered overdue count in both scopes.
           items:
             $ref: '#/components/schemas/DueItem'
         due_today:
@@ -919,7 +960,7 @@ components:
     TimelineResponse:
       type: object
       additionalProperties: false
-      required: [reference_time_utc, timezone, currency_code, entries]
+      required: [reference_time_utc, timezone, currency_code, overdue_count, entries]
       properties:
         reference_time_utc:
           type: string
@@ -935,7 +976,18 @@ components:
         currency_code:
           type: string
           pattern: '^[A-Z]{3}$'
-          description: ISO 4217 code used to format amounts in the detail view. No conversion.
+          description: |
+            ISO 4217 code retained for compatibility. No conversion is performed and
+            the primary deadline views do not display amounts.
+        overdue_count:
+          type: integer
+          format: int64
+          minimum: 0
+          description: |
+            Count of filtered active items whose `urgency` is `overdue`, independent of
+            `scope`. Computed against the same `reference_time_utc` as every entry and
+            before any `scope=upcoming` omission. Zero when no filtered active item is
+            overdue.
         entries:
           type: array
           description: |

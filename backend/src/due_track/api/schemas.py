@@ -21,6 +21,7 @@ RecurrenceFrequency = Literal[
 ]
 AnchorMode = Literal["schedule", "completion"]
 ItemStatus = Literal["active", "completed", "deleted"]
+ItemScope = Literal["upcoming", "all"]
 
 FIXED_FREQUENCIES = {"daily", "weekly", "monthly", "yearly"}
 DAY_OR_WEEK_FREQUENCIES = {"daily", "weekly", "custom_days", "custom_weeks"}
@@ -236,6 +237,7 @@ class TimelineResponse(StrictModel):
     reference_time_utc: datetime
     timezone: str
     currency_code: str
+    overdue_count: int = 0
     entries: list[TimelineEntry]
 
 

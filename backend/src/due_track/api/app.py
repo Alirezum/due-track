@@ -27,7 +27,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(
         title="due-track API",
-        version="1.1.0",
+        version="1.2.0",
         lifespan=lifespan,
     )
     app.dependency_overrides[get_app_settings] = lambda: resolved_settings
