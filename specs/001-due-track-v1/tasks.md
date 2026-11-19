@@ -171,7 +171,7 @@
 - [X] T065 [US4] Implement `GET /api/history` and `DELETE /api/history/{log_id}` in `backend/src/due_track/api/routes/history.py`, including reverse-chronological pagination, self-contained snapshots mapped to typed enriched responses, `can_undo`, and 404/204 behavior.
 - [X] T066 [US4] Implement `POST /api/history/{log_id}/undo` in `backend/src/due_track/api/routes/history.py`: allow only the latest completion of an existing non-deleted item; restore in place with the existing item ID when `updated_at_utc == completed_at_utc`; otherwise insert the snapshot as a new active row with a new ID, keep the touched occurrence, and return the warning.
 - [X] T067 [P] [US4] Implement `frontend/src/hooks/useHistory.ts` with TanStack Query history list, undo, and delete mutations plus items/history invalidation.
-- [ ] T068 [US4] Implement `frontend/src/pages/HistoryPage.tsx` to render snapshot fields, original due date, completion timestamp, `can_undo`, a preservation warning, and confirmed deletion.
+- [X] T068 [US4] Implement `frontend/src/pages/HistoryPage.tsx` to render snapshot fields, original due date, completion timestamp, `can_undo`, a preservation warning, and confirmed deletion.
 - [ ] T069 [US4] Wire the `/history` route in `frontend/src/App.tsx` and verify `npm run build` in `frontend/`.
 - [ ] T070 [US4] Run the US4 quality gates from `specs/001-due-track-v1/plan.md` and the history tests in `backend/tests/integration/api/test_history.py` and `frontend/tests/history.test.tsx`.
 

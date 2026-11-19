@@ -8,6 +8,7 @@ import type {
   CompletionLog,
   DueItem,
   HistoryResponse,
+  ItemListResponse,
   UndoResponse,
 } from '@/api/types'
 import { HistoryPage } from '@/pages/HistoryPage'
@@ -86,6 +87,17 @@ const OLDER_LOG: CompletionLog = {
 const HISTORY: HistoryResponse = { entries: [LATEST_LOG, OLDER_LOG], total: 2 }
 const EMPTY_HISTORY: HistoryResponse = { entries: [], total: 0 }
 
+const ITEM_LIST: ItemListResponse = {
+  buckets: { overdue: [], due_today: [], upcoming: [], later: [] },
+  summary: { overdue_count: 0, due_today_count: 0, upcoming_total_cents: 0 },
+  currency_code: 'USD',
+  timezone: 'America/New_York',
+}
+
+function isItemList(url: string, method: string): boolean {
+  return method === 'GET' && /^\/api\/items(?:\?|$)/.test(url)
+}
+
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -145,7 +157,11 @@ afterEach(() => {
 describe('history', () => {
   it('renders completions newest first with their self-contained snapshots', async () => {
     mockFetch((url, init) => {
-      expect(isHistoryList(url, init.method ?? 'GET')).toBe(true)
+      const method = init.method ?? 'GET'
+      if (isItemList(url, method)) {
+        return jsonResponse(ITEM_LIST)
+      }
+      expect(isHistoryList(url, method)).toBe(true)
       return jsonResponse(HISTORY)
     })
     renderHistory()
@@ -198,6 +214,9 @@ describe('history', () => {
       }
       if (isHistoryList(url, method)) {
         return jsonResponse(undone ? EMPTY_HISTORY : HISTORY)
+      }
+      if (isItemList(url, method)) {
+        return jsonResponse(ITEM_LIST)
       }
       throw new Error(`Unexpected request: ${method} ${url}`)
     })
