@@ -77,7 +77,7 @@
 > Write these tests first and verify they fail before implementation.
 
 - [X] T024 [P] [US1] Write domain bucket tests in `backend/tests/unit/domain/test_status.py` covering overdue earlier today, due exactly now, date-only end-of-local-day values, local midnight/DST cases supplied by the boundary, Upcoming days 1–7, Later day 8, and exactly-one-bucket classification; domain tests must pass UTC instants and naive local dates without any timezone conversion.
-- [ ] T025 [P] [US1] Write domain sorting tests in `backend/tests/unit/domain/test_sorting.py` covering due date ascending, priority descending (critical > high > medium > low), and case-insensitive title ascending.
+- [X] T025 [P] [US1] Write domain sorting tests in `backend/tests/unit/domain/test_sorting.py` covering due date ascending, priority descending (critical > high > medium > low), and case-insensitive title ascending.
 - [ ] T026 [P] [US1] Write API integration tests in `backend/tests/integration/api/test_items.py` for GET/POST/PATCH/DELETE `/api/items`, title length 1 and 200 accepted / 0 and 201 rejected, missing due rejected, notes/category/amount constraints, date-only end-of-day and UTC persistence, inclusive local `recurrence_end_date` converted to `recurrence_end_at_utc`, app-timezone bucket boundaries, bucket order, summary totals (amount-free items excluded and zero amounts contributing zero), soft delete, and persistence across app restart.
 - [ ] T027 [P] [US1] Write frontend tests in `frontend/tests/dashboard.test.tsx` for rendering buckets and summary, creating/editing items, delete confirmation, deterministic category-label badges, and plain-text notes rendering without HTML execution.
 
