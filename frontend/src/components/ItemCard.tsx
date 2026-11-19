@@ -57,6 +57,7 @@ export type ItemCardProps = {
   onDelete: (item: DueItem) => void
   onComplete?: (item: DueItem) => void
   isCompleting?: boolean
+  isActive?: boolean
 }
 
 export function ItemCard({
@@ -66,6 +67,7 @@ export function ItemCard({
   onDelete,
   onComplete,
   isCompleting = false,
+  isActive = false,
 }: ItemCardProps) {
   const amount = formatAmount(item.amount_cents, currencyCode)
   const categoryClass = categoryBadgeClass(item.category)
@@ -75,9 +77,15 @@ export function ItemCard({
   return (
     <article
       aria-label={item.title}
+      aria-current={isActive ? 'true' : undefined}
+      data-item-id={item.id}
+      data-active={isActive ? 'true' : undefined}
+      tabIndex={0}
       className={cn(
-        'grid gap-3 border border-l-2 border-border/75 bg-card p-4 transition-colors',
+        'grid gap-3 border border-l-2 border-border/75 bg-card p-4 transition-colors outline-none',
         'hover:border-border hover:bg-accent/35 focus-within:border-ring/60',
+        'focus-visible:ring-[3px] focus-visible:ring-ring/50',
+        isActive && 'border-ring bg-accent/55 ring-2 ring-ring/40',
         PRIORITY_BORDER[item.priority],
       )}
     >

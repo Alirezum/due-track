@@ -13,6 +13,7 @@ export type BucketSectionProps = {
   onDelete: (item: DueItem) => void
   onComplete?: (item: DueItem) => void
   completingItemId?: number | null
+  activeItemId?: number | null
 }
 
 const TONE_RULE: Record<NonNullable<BucketSectionProps['tone']>, string> = {
@@ -33,6 +34,7 @@ export function BucketSection({
   onDelete,
   onComplete,
   completingItemId = null,
+  activeItemId = null,
 }: BucketSectionProps) {
   return (
     <section aria-labelledby={`${id}-heading`} className="grid gap-3">
@@ -62,6 +64,7 @@ export function BucketSection({
               onDelete={onDelete}
               onComplete={onComplete}
               isCompleting={completingItemId === item.id}
+              isActive={activeItemId === item.id}
             />
           ))}
         </div>

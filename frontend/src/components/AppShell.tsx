@@ -15,6 +15,13 @@ export function AppShell() {
 
   return (
     <div className="min-h-screen bg-background">
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-50 focus:rounded-sm focus:border focus:border-border focus:bg-background focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+      >
+        Skip to main content
+      </a>
+
       <header className="border-b border-border/80">
         <div className="mx-auto flex h-16 max-w-6xl items-center gap-3 px-5 sm:gap-5 sm:px-8">
           <NavLink
@@ -65,7 +72,11 @@ export function AppShell() {
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-6xl px-5 py-10 sm:px-8 sm:py-14">
+      <main
+        id="main-content"
+        tabIndex={-1}
+        className="mx-auto w-full max-w-6xl px-5 py-10 outline-none sm:px-8 sm:py-14"
+      >
         <Outlet />
       </main>
     </div>
