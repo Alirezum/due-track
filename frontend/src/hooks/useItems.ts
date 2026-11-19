@@ -1,6 +1,6 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiRequest } from '@/api/client'
-import type { DueItem, ItemCreate, ItemListResponse, ItemUpdate } from '@/api/types'
+import type { DueItem, ItemCreate, ItemListResponse, ItemScope, ItemUpdate } from '@/api/types'
 import { EMPTY_FILTERS, filtersToQueryString, type ItemFilters } from '@/lib/filters'
 import { invalidateDeadlineQueries, itemsQueryKey } from '@/lib/queryKeys'
 
@@ -8,10 +8,19 @@ export { itemsQueryKey }
 
 const JSON_HEADERS = { 'content-type': 'application/json' }
 
+export type ItemsQueryOptions = {
+  refetchInterval?: number | false
+  refetchOnWindowFocus?: boolean
+}
+
 export async function fetchItems(
   filters: ItemFilters = EMPTY_FILTERS,
+  scope: ItemScope = 'all',
 ): Promise<ItemListResponse> {
-  return apiRequest<ItemListResponse>(`/api/items${filtersToQueryString(filters)}`)
+  const scopeParam = scope === 'upcoming' ? scope : undefined
+  return apiRequest<ItemListResponse>(
+    `/api/items${filtersToQueryString(filters, scopeParam)}`,
+  )
 }
 
 export async function createItem(payload: ItemCreate): Promise<DueItem> {
@@ -34,11 +43,16 @@ export async function deleteItem(id: number): Promise<void> {
   return apiRequest<void>(`/api/items/${id}`, { method: 'DELETE' })
 }
 
-export function useItems(filters: ItemFilters = EMPTY_FILTERS) {
+export function useItems(
+  filters: ItemFilters = EMPTY_FILTERS,
+  scope: ItemScope = 'all',
+  options: ItemsQueryOptions = {},
+) {
   return useQuery({
-    queryKey: [...itemsQueryKey, filters],
-    queryFn: () => fetchItems(filters),
+    queryKey: [...itemsQueryKey, filters, scope],
+    queryFn: () => fetchItems(filters, scope),
     placeholderData: keepPreviousData,
+    ...options,
   })
 }
 
