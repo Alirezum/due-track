@@ -8,7 +8,7 @@ from typing import Any
 from fastapi.testclient import TestClient
 
 from due_track.db.connection import connect
-from tests.integration.api.timeline_fixtures import seed_timeline_items
+from tests.integration.api.timeline_fixtures import REFERENCE, seed_timeline_items
 
 SEEDED_ITEMS = 1_000
 MAX_SECONDS = 1.0
@@ -49,6 +49,66 @@ def _seed_active_items(db_path: Path, count: int = SEEDED_ITEMS) -> None:
         connection.execute("COMMIT")
     finally:
         connection.close()
+
+
+def _seed_mixed_scope_items(db_path: Path) -> None:
+    connection = connect(db_path)
+    try:
+        seed_timeline_items(
+            connection,
+            SEEDED_ITEMS // 2,
+            due_base=REFERENCE - timedelta(days=30),
+            category="Bench",
+            priority="medium",
+            recurrence_freq="none",
+            title_prefix="Overdue benchmark",
+        )
+        seed_timeline_items(
+            connection,
+            SEEDED_ITEMS // 2,
+            due_base=REFERENCE + timedelta(days=1),
+            category="Bench",
+            priority="medium",
+            recurrence_freq="none",
+            title_prefix="Upcoming benchmark",
+        )
+    finally:
+        connection.close()
+
+
+def test_scope_upcoming_list_with_thousand_mixed_items_stays_under_one_second(
+    client: TestClient, migrated_database: Path
+) -> None:
+    _seed_mixed_scope_items(migrated_database)
+
+    started = time.perf_counter()
+    response = client.get("/api/items", params={"scope": "upcoming"})
+    elapsed = time.perf_counter() - started
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["summary"]["overdue_count"] == SEEDED_ITEMS // 2
+    assert body["buckets"]["overdue"] == []
+    visible = sum(len(items) for items in body["buckets"].values())
+    assert visible == SEEDED_ITEMS // 2
+    assert elapsed < MAX_SECONDS, f"upcoming list took {elapsed:.3f}s for {SEEDED_ITEMS} items"
+
+
+def test_scope_upcoming_timeline_with_thousand_mixed_items_stays_under_one_second(
+    client: TestClient, migrated_database: Path
+) -> None:
+    _seed_mixed_scope_items(migrated_database)
+
+    started = time.perf_counter()
+    response = client.get("/api/timeline", params={"scope": "upcoming"})
+    elapsed = time.perf_counter() - started
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["overdue_count"] == SEEDED_ITEMS // 2
+    assert len(body["entries"]) == SEEDED_ITEMS // 2
+    assert all(entry["urgency"] != "overdue" for entry in body["entries"])
+    assert elapsed < MAX_SECONDS, f"upcoming timeline took {elapsed:.3f}s for {SEEDED_ITEMS} items"
 
 
 def test_filtered_list_with_thousand_items_stays_under_one_second(

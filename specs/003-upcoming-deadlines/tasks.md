@@ -172,7 +172,7 @@ skill (Constitution VI).
 
 **Purpose**: Performance, documentation, full gates, contract parity, and manual validation.
 
-- [ ] T036 [P] Add 1,000-item scope performance tests to `backend/tests/integration/api/test_performance.py`: mixed overdue/future items through `GET /api/items?scope=upcoming` and `GET /api/timeline?scope=upcoming` under the existing 1-second gate.
+- [X] T036 [P] Add 1,000-item scope performance tests to `backend/tests/integration/api/test_performance.py`: mixed overdue/future items through `GET /api/items?scope=upcoming` and `GET /api/timeline?scope=upcoming` under the existing 1-second gate.
 - [ ] T037 [P] Update `README.md` and `CHANGELOG.md`: upcoming-only default, overdue indicator/reveal, `Next 7 days` summary cell, expense-free primary views, `scope`/`overdue_count`, version `1.2.0`, no migration, and unchanged History/amount behavior.
 - [ ] T038 [P] Add the UI performance test in `frontend/tests/performance.test.tsx`: render the Dashboard and Timeline with 1,000 deterministic server-shaped deadlines including overdue, assert the default upcoming view becomes interactive within 2 seconds (SC-009) and reveal/hide settles within 1 second (SC-003) using `performance.now()`; exclude network time and keep the fixture stable across runs.
 - [ ] T039 Run full backend gates in `backend/`: `uv run pytest`, `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy src`.
