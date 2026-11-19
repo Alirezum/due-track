@@ -111,7 +111,7 @@
 ### Tests for User Story 2 (required)
 
 - [X] T042 [P] [US2] Write recurrence unit tests in `backend/tests/unit/domain/test_recurrence.py` for daily, weekly, monthly, yearly, custom days/weeks/months/years, schedule vs completion anchoring, month-end clamp/snap-back, Feb 29 leap years, inclusive local end dates, initial total converted to remaining count, decrement behavior, fast-forward after missed occurrences, and early completion; pass naive local calendar components without timezone conversion.
-- [ ] T043 [P] [US2] Write completion API tests in `backend/tests/integration/api/test_completion.py` for one-time completion returning `item: null`, recurring advancement, no next occurrence at end, initial total-to-remaining count behavior, transaction rollback, and PATCH recurrence recalculation preserving a manually edited occurrence; verify UTC persistence and boundary-only local conversion.
+- [X] T043 [P] [US2] Write completion API tests in `backend/tests/integration/api/test_completion.py` for one-time completion returning `item: null`, recurring advancement, no next occurrence at end, initial total-to-remaining count behavior, transaction rollback, and PATCH recurrence recalculation preserving a manually edited occurrence; verify UTC persistence and boundary-only local conversion.
 - [ ] T044 [P] [US2] Write frontend completion tests in `frontend/tests/completion.test.tsx` for the complete action, item list invalidation, and next-due display.
 
 ### Implementation for User Story 2
