@@ -78,7 +78,7 @@ def test_one_time_completion_returns_null_item_and_hides_the_item(
 
     row = _fetch_item(migrated_database, item["id"])
     assert row["status"] == "completed"
-    assert row["due_at_utc"] == item["due_at_utc"]
+    assert _parse_datetime(row["due_at_utc"]) == _parse_datetime(item["due_at_utc"])
     assert _parse_datetime(row["updated_at_utc"]) == FIXED_NOW
 
 
@@ -187,7 +187,7 @@ def test_completion_is_atomic_when_the_item_update_fails(
     assert _count_logs(migrated_database) == 0
     row = _fetch_item(migrated_database, item["id"])
     assert row["status"] == "active"
-    assert row["due_at_utc"] == item["due_at_utc"]
+    assert _parse_datetime(row["due_at_utc"]) == _parse_datetime(item["due_at_utc"])
 
 
 def test_patch_recalculates_an_untouched_occurrence_after_a_policy_change(

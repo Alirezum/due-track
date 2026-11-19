@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+from dataclasses import asdict
 from datetime import date, datetime
 from typing import Any, cast
 from zoneinfo import ZoneInfo
@@ -10,6 +12,8 @@ from due_track.api.deps import DatabaseDep, NowDep, SettingsDep
 from due_track.api.schemas import (
     AnchorMode,
     Buckets,
+    CompleteResponse,
+    CompletionLog,
     DashboardSummary,
     DueItem,
     ItemCreate,
@@ -19,6 +23,8 @@ from due_track.api.schemas import (
     validate_recurrence_policy,
 )
 from due_track.api.time import (
+    end_of_local_day_to_utc,
+    local_to_utc,
     parse_due_input,
     recurrence_end_date_to_utc,
     recurrence_end_utc_to_local_date,
@@ -26,6 +32,11 @@ from due_track.api.time import (
     utc_to_local_date,
 )
 from due_track.config import Settings
+from due_track.db.history_repository import (
+    completion_transaction,
+    get_latest_completion_log,
+    insert_completion_log,
+)
 from due_track.db.items_repository import (
     ItemRecord,
     get_active_item,
@@ -34,6 +45,7 @@ from due_track.db.items_repository import (
     soft_delete_item,
     update_item,
 )
+from due_track.domain.recurrence import next_occurrence, remaining_after_completion
 from due_track.domain.sorting import sort_items
 from due_track.domain.status import Bucket, classify_bucket, summarize_buckets
 
@@ -233,6 +245,117 @@ def create_item(
     record = insert_item(connection, values)
     response.headers["Location"] = f"/api/items/{record.id}"
     return _record_to_due_item(record, tz)
+
+
+def _snapshot_json(record: ItemRecord, *, next_due_at_utc: datetime | None) -> str:
+    item = asdict(record)
+    for key, value in item.items():
+        if isinstance(value, datetime):
+            item[key] = value.isoformat()
+
+    snapshot: dict[str, Any] = {
+        "snapshot_version": 1,
+        "spawned_next_occurrence": next_due_at_utc is not None,
+        "item": item,
+    }
+    if next_due_at_utc is not None:
+        snapshot["next_due_at_utc"] = next_due_at_utc.isoformat()
+    return json.dumps(snapshot, separators=(",", ":"))
+
+
+@router.post("/{item_id}/complete", response_model=CompleteResponse)
+def complete_item(
+    item_id: int,
+    connection: DatabaseDep,
+    settings: SettingsDep,
+    now: NowDep,
+) -> CompleteResponse:
+    record = get_active_item(connection, item_id)
+    if record is None:
+        raise _not_found(item_id)
+
+    tz = _zone(settings)
+    current_local = utc_to_local(record.due_at_utc, tz)
+    completion_local = utc_to_local(now, tz)
+    end_local_date = (
+        recurrence_end_utc_to_local_date(record.recurrence_end_at_utc, tz)
+        if record.recurrence_end_at_utc is not None
+        else None
+    )
+
+    next_local = None
+    if record.recurrence_freq != "none" and (
+        record.recurrence_remaining_count is None or record.recurrence_remaining_count > 1
+    ):
+        next_local = next_occurrence(
+            current_due_at_utc=record.due_at_utc,
+            completion_at_utc=now,
+            current_local_date=current_local.date(),
+            current_local_time=None if record.is_date_only else current_local.time(),
+            completion_local_date=completion_local.date(),
+            completion_local_time=completion_local.time(),
+            recurrence_freq=record.recurrence_freq,
+            recurrence_interval=record.recurrence_interval,
+            recurrence_anchor_mode=record.recurrence_anchor_mode,
+            recurrence_anchor_day=record.recurrence_anchor_day,
+            end_local_date=end_local_date,
+        )
+
+    next_due_at_utc = None
+    if next_local is not None:
+        if next_local.local_time is None:
+            next_due_at_utc = end_of_local_day_to_utc(next_local.local_date, tz)
+        else:
+            next_due_at_utc = local_to_utc(
+                datetime.combine(next_local.local_date, next_local.local_time), tz
+            )
+
+    previous_state = _record_to_due_item(record, tz)
+    snapshot_json = _snapshot_json(record, next_due_at_utc=next_due_at_utc)
+
+    updated_fields: dict[str, Any] = {"updated_at_utc": now}
+    if next_due_at_utc is None:
+        updated_fields["status"] = "completed"
+        if record.recurrence_remaining_count is not None:
+            updated_fields["recurrence_remaining_count"] = 0
+    else:
+        updated_fields["due_at_utc"] = next_due_at_utc
+        updated_fields["status"] = "active"
+        if record.recurrence_remaining_count is not None:
+            updated_fields["recurrence_remaining_count"] = remaining_after_completion(
+                record.recurrence_remaining_count
+            )
+
+    with completion_transaction(connection):
+        log_record = insert_completion_log(
+            connection,
+            item_id=record.id,
+            scheduled_due_at_utc=record.due_at_utc,
+            completed_at_utc=now,
+            previous_state_snapshot_json=snapshot_json,
+        )
+        advanced = update_item(connection, item_id, updated_fields)
+        if advanced is None:
+            raise _not_found(item_id)
+
+    latest_log = get_latest_completion_log(connection, item_id)
+    return CompleteResponse(
+        log=CompletionLog(
+            id=log_record.id,
+            item_id=log_record.item_id,
+            scheduled_due_at_utc=log_record.scheduled_due_at_utc,
+            completed_at_utc=log_record.completed_at_utc,
+            previous_state=previous_state,
+            spawned_next_occurrence=next_due_at_utc is not None,
+            next_due_at_utc=next_due_at_utc,
+            can_undo=(
+                latest_log is not None
+                and latest_log.id == log_record.id
+                and advanced.status != "deleted"
+            ),
+        ),
+        item=_record_to_due_item(advanced, tz) if next_due_at_utc is not None else None,
+    )
 
 
 def _updated_values(
