@@ -258,3 +258,14 @@ class CompletionLog(StrictModel):
 class CompleteResponse(StrictModel):
     log: CompletionLog
     item: DueItem | None
+
+
+class HistoryResponse(StrictModel):
+    entries: list[CompletionLog]
+    total: int
+
+
+class UndoResponse(StrictModel):
+    restored_item: DueItem
+    preserved_touched_occurrence: bool
+    warning: str | None
