@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Plus } from 'lucide-react'
 import { ApiError } from '@/api/client'
-import type { DueItem, ItemCreate, ItemUpdate } from '@/api/types'
+import type { DueItem, ItemCreate, ItemListResponse, ItemUpdate } from '@/api/types'
 import { BucketSection } from '@/components/BucketSection'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
+import { FilterBar } from '@/components/FilterBar'
 import { ItemForm } from '@/components/ItemForm'
 import { Button } from '@/components/ui/button'
 import {
@@ -15,6 +16,7 @@ import {
 } from '@/components/ui/dialog'
 import { useCompleteItem } from '@/hooks/useCompleteItem'
 import { useCreateItem, useDeleteItem, useItems, useUpdateItem } from '@/hooks/useItems'
+import { EMPTY_FILTERS, hasActiveFilters, type ItemFilters } from '@/lib/filters'
 import { formatAmount } from '@/lib/format'
 
 function describeError(error: unknown): string {
@@ -29,8 +31,26 @@ function describeError(error: unknown): string {
   return 'The change could not be saved. Check that the local server is running and try again.'
 }
 
+function categoriesFrom(data: ItemListResponse | undefined): string[] {
+  if (!data) {
+    return []
+  }
+  const categories = new Set<string>()
+  for (const items of Object.values(data.buckets)) {
+    for (const item of items) {
+      if (item.category) {
+        categories.add(item.category)
+      }
+    }
+  }
+  return [...categories].sort((a, b) => a.localeCompare(b))
+}
+
 export function DashboardPage() {
-  const { data, isPending, isError, error, refetch } = useItems()
+  const [filters, setFilters] = useState<ItemFilters>(EMPTY_FILTERS)
+  const { data, isPending, isFetching, isError, error, refetch } = useItems(filters)
+  const categorySource = useItems()
+  const categories = useMemo(() => categoriesFrom(categorySource.data), [categorySource.data])
   const createItem = useCreateItem()
   const updateItem = useUpdateItem()
   const deleteItem = useDeleteItem()
@@ -126,6 +146,12 @@ export function DashboardPage() {
 
   const { buckets, summary, currency_code: currencyCode } = data
   const upcomingTotal = formatAmount(summary.upcoming_total_cents, currencyCode) ?? '—'
+  const visibleCount =
+    buckets.overdue.length +
+    buckets.due_today.length +
+    buckets.upcoming.length +
+    buckets.later.length
+  const filtersActive = hasActiveFilters(filters)
 
   return (
     <div className="grid gap-10">
@@ -169,66 +195,85 @@ export function DashboardPage() {
         </span>
       </section>
 
+      <FilterBar filters={filters} categories={categories} onChange={setFilters} />
+
       {pageError ? (
         <p className="border-l-2 border-destructive pl-3 text-sm text-destructive" role="alert">
           {pageError}
         </p>
       ) : null}
 
-      <div className="grid gap-x-12 gap-y-10 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
-        <div className="grid content-start gap-10">
-          <BucketSection
-            id="overdue"
-            title="Overdue"
-            tone="overdue"
-            items={buckets.overdue}
-            emptyLabel="Nothing overdue"
-            currencyCode={currencyCode}
-            onEdit={openEdit}
-            onDelete={setDeletingItem}
-            onComplete={(item) => void handleComplete(item)}
-            completingItemId={completingItemId}
-          />
-          <BucketSection
-            id="due-today"
-            title="Due today"
-            tone="today"
-            items={buckets.due_today}
-            emptyLabel="Nothing due today"
-            currencyCode={currencyCode}
-            onEdit={openEdit}
-            onDelete={setDeletingItem}
-            onComplete={(item) => void handleComplete(item)}
-            completingItemId={completingItemId}
-          />
+      {filtersActive && visibleCount === 0 ? (
+        <section
+          aria-label="Filtered results"
+          className="border-y border-dashed border-border py-12 text-center"
+        >
+          <h2 className="font-display text-2xl font-semibold tracking-[-0.025em]">
+            No deadlines match these filters.
+          </h2>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Clear filters to see the full ledger.
+          </p>
+        </section>
+      ) : (
+        <div
+          aria-busy={isFetching}
+          className="grid gap-x-12 gap-y-10 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]"
+        >
+          <div className="grid content-start gap-10">
+            <BucketSection
+              id="overdue"
+              title="Overdue"
+              tone="overdue"
+              items={buckets.overdue}
+              emptyLabel="Nothing overdue"
+              currencyCode={currencyCode}
+              onEdit={openEdit}
+              onDelete={setDeletingItem}
+              onComplete={(item) => void handleComplete(item)}
+              completingItemId={completingItemId}
+            />
+            <BucketSection
+              id="due-today"
+              title="Due today"
+              tone="today"
+              items={buckets.due_today}
+              emptyLabel="Nothing due today"
+              currencyCode={currencyCode}
+              onEdit={openEdit}
+              onDelete={setDeletingItem}
+              onComplete={(item) => void handleComplete(item)}
+              completingItemId={completingItemId}
+            />
+          </div>
+          <div className="grid content-start gap-10">
+            <BucketSection
+              id="upcoming"
+              title="Upcoming"
+              tone="upcoming"
+              items={buckets.upcoming}
+              emptyLabel="Nothing in the next seven days"
+              currencyCode={currencyCode}
+              onEdit={openEdit}
+              onDelete={setDeletingItem}
+              onComplete={(item) => void handleComplete(item)}
+              completingItemId={completingItemId}
+            />
+            <BucketSection
+              id="later"
+              title="Later"
+              tone="later"
+              items={buckets.later}
+              emptyLabel="Nothing later"
+              currencyCode={currencyCode}
+              onEdit={openEdit}
+              onDelete={setDeletingItem}
+              onComplete={(item) => void handleComplete(item)}
+              completingItemId={completingItemId}
+            />
+          </div>
         </div>
-        <div className="grid content-start gap-10">
-          <BucketSection
-            id="upcoming"
-            title="Upcoming"
-            tone="upcoming"
-            items={buckets.upcoming}
-            emptyLabel="Nothing in the next seven days"
-            currencyCode={currencyCode}
-            onEdit={openEdit}
-            onDelete={setDeletingItem}
-            onComplete={(item) => void handleComplete(item)}
-            completingItemId={completingItemId}
-          />
-          <BucketSection
-            id="later"
-            title="Later"
-            tone="later"
-            items={buckets.later}
-            emptyLabel="Nothing later"
-            currencyCode={currencyCode}
-            onEdit={openEdit}
-            onDelete={setDeletingItem}
-            onComplete={(item) => void handleComplete(item)}
-            completingItemId={completingItemId}
-          />
-        </div>
-      </div>
+      )}
 
       {createOpen ? (
         <Dialog open onOpenChange={setCreateOpen}>
