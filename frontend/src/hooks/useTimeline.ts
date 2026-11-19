@@ -1,7 +1,7 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useEffect, useMemo, useState } from 'react'
 import { apiRequest } from '@/api/client'
-import type { TimelineResponse } from '@/api/types'
+import type { ItemScope, TimelineResponse } from '@/api/types'
 import { EMPTY_FILTERS, filtersToQueryString, type ItemFilters } from '@/lib/filters'
 import { timelineQueryKey } from '@/lib/queryKeys'
 
@@ -11,8 +11,12 @@ const REFETCH_EPSILON_MS = 1000
 
 export async function fetchTimeline(
   filters: ItemFilters = EMPTY_FILTERS,
+  scope: ItemScope = 'all',
 ): Promise<TimelineResponse> {
-  return apiRequest<TimelineResponse>(`/api/timeline${filtersToQueryString(filters)}`)
+  const scopeParam = scope === 'upcoming' ? scope : undefined
+  return apiRequest<TimelineResponse>(
+    `/api/timeline${filtersToQueryString(filters, scopeParam)}`,
+  )
 }
 
 export type TimelineClockAnchor = {
@@ -52,10 +56,10 @@ export function computeRefetchInterval(data: TimelineResponse | undefined): numb
   )
 }
 
-export function useTimeline(filters: ItemFilters = EMPTY_FILTERS) {
+export function useTimeline(filters: ItemFilters = EMPTY_FILTERS, scope: ItemScope = 'all') {
   const query = useQuery({
-    queryKey: [...timelineQueryKey, filters],
-    queryFn: () => fetchTimeline(filters),
+    queryKey: [...timelineQueryKey, filters, scope],
+    queryFn: () => fetchTimeline(filters, scope),
     placeholderData: keepPreviousData,
     refetchOnWindowFocus: true,
     refetchIntervalInBackground: false,
