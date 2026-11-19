@@ -45,6 +45,7 @@ export type ResolveWindowOptions = {
   entries: WindowEntry[]
   selectedId?: number | null
   revealedEdges?: RevealedEdges
+  includeOverdue?: boolean
 }
 
 export function resetReveals(): RevealedEdges {
@@ -61,19 +62,23 @@ function baseWindow(
   horizon: TimeHorizon,
   nowMs: number,
   dues: Array<{ id: number; dueMs: number }>,
+  includeOverdue: boolean,
 ): { startMs: number; endMs: number } {
   const fixedSpan = FIXED_SPANS[horizon]
   if (fixedSpan !== undefined) {
-    return { startMs: nowMs - fixedSpan, endMs: nowMs + fixedSpan }
+    return includeOverdue
+      ? { startMs: nowMs - fixedSpan, endMs: nowMs + fixedSpan }
+      : { startMs: nowMs, endMs: nowMs + fixedSpan }
   }
 
   const overdue = dues.filter((entry) => entry.dueMs < nowMs)
   const future = dues.filter((entry) => entry.dueMs > nowMs)
 
   if (horizon === 'all') {
-    const startMs = overdue.length
-      ? Math.min(...overdue.map((entry) => entry.dueMs))
-      : nowMs
+    const startMs =
+      includeOverdue && overdue.length
+        ? Math.min(...overdue.map((entry) => entry.dueMs))
+        : nowMs
     const endMs = future.length
       ? Math.max(...future.map((entry) => entry.dueMs))
       : nowMs
@@ -82,9 +87,12 @@ function baseWindow(
 
   // 30d default: every overdue deadline plus the next 30 days. When the
   // forward range holds no deadline, extend to the nearest upcoming one.
-  const startMs = overdue.length
-    ? Math.min(nowMs - 30 * DAY_MS, ...overdue.map((entry) => entry.dueMs))
-    : nowMs - 30 * DAY_MS
+  let startMs = nowMs
+  if (includeOverdue) {
+    startMs = overdue.length
+      ? Math.min(nowMs - 30 * DAY_MS, ...overdue.map((entry) => entry.dueMs))
+      : nowMs - 30 * DAY_MS
+  }
   const inside = future.filter((entry) => entry.dueMs <= nowMs + 30 * DAY_MS)
   const endMs =
     inside.length > 0
@@ -102,9 +110,10 @@ export function resolveTimelineWindow({
   entries,
   selectedId = null,
   revealedEdges = resetReveals(),
+  includeOverdue = true,
 }: ResolveWindowOptions): TimelineWindow {
   const dues = dueTimes(entries)
-  let { startMs, endMs } = baseWindow(horizon, nowMs, dues)
+  let { startMs, endMs } = baseWindow(horizon, nowMs, dues, includeOverdue)
 
   if (revealedEdges.left !== null) {
     startMs = Math.min(startMs, revealedEdges.left)

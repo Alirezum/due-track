@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { summarizeEdges } from '@/lib/timeline/geometry'
 import {
   DEFAULT_HORIZON,
   HORIZONS,
@@ -96,6 +97,94 @@ describe('resolveTimelineWindow', () => {
     })
     expect(window.startMs).toBe(NOW - DAY)
     expect(window.endMs).toBe(NOW + 10 * DAY)
+  })
+})
+
+describe('forward-only windows when overdue is hidden', () => {
+  const forward = { includeOverdue: false }
+
+  it('starts every fixed horizon at now and ends one span ahead', () => {
+    expect(resolve('24h', [], forward)).toMatchObject({ startMs: NOW, endMs: NOW + DAY })
+    expect(resolve('7d', [], forward)).toMatchObject({ startMs: NOW, endMs: NOW + 7 * DAY })
+    expect(resolve('90d', [], forward)).toMatchObject({ startMs: NOW, endMs: NOW + 90 * DAY })
+    expect(resolve('1y', [], forward)).toMatchObject({ startMs: NOW, endMs: NOW + 365 * DAY })
+  })
+
+  it('ends the default 30d horizon at now plus 30 days when a deadline is inside', () => {
+    const window = resolve('30d', [10 * DAY], forward)
+    expect(window.startMs).toBe(NOW)
+    expect(window.endMs).toBe(NOW + 30 * DAY)
+  })
+
+  it('extends the default 30d horizon to the nearest future deadline when none is inside', () => {
+    const window = resolve('30d', [60 * DAY], forward)
+    expect(window.startMs).toBe(NOW)
+    expect(window.endMs).toBe(NOW + 60 * DAY)
+  })
+
+  it('ends the all-time horizon at the latest future deadline', () => {
+    const window = resolve('all', [10 * DAY, 400 * DAY], forward)
+    expect(window.startMs).toBe(NOW)
+    expect(window.endMs).toBe(NOW + 400 * DAY)
+  })
+
+  it('keeps a positive-duration forward window when there are no future entries', () => {
+    for (const horizon of HORIZONS.map((option) => option.value)) {
+      const window = resolve(horizon, [], forward)
+      expect(window.startMs).toBe(NOW)
+      expect(window.endMs).toBeGreaterThan(window.startMs)
+    }
+    expect(resolve('all', [], forward)).toMatchObject({ startMs: NOW, endMs: NOW + 1 })
+  })
+
+  it('never reports a left edge summary for a forward-only window', () => {
+    const entries = entriesAt([10 * DAY, 40 * DAY])
+    const window = resolveTimelineWindow({
+      horizon: '30d',
+      nowMs: NOW,
+      entries,
+      includeOverdue: false,
+    })
+    const edges = summarizeEdges(entries, window)
+
+    expect(edges.left).toBeNull()
+    expect(edges.right).toMatchObject({ edge: 'right', count: 1, boundary: NOW + 40 * DAY })
+  })
+
+  it('includes a selected future entry by extending the right edge', () => {
+    const selected = makeTimelineEntry({
+      id: 99,
+      title: 'Selected',
+      dueAtUtc: new Date(NOW + 10 * DAY).toISOString(),
+    })
+    const window = resolveTimelineWindow({
+      horizon: '24h',
+      nowMs: NOW,
+      entries: [selected],
+      selectedId: 99,
+      includeOverdue: false,
+    })
+
+    expect(window.startMs).toBe(NOW)
+    expect(window.endMs).toBe(NOW + 10 * DAY)
+  })
+
+  it('still extends the right edge through a reveal', () => {
+    const initial = resolve('24h', [], forward)
+    const revealed = revealEdge(initial, 'right', NOW + 3 * DAY)
+
+    expect(revealed.startMs).toBe(NOW)
+    expect(revealed.endMs).toBe(NOW + 3 * DAY)
+  })
+
+  it('preserves the 002 symmetric window when includeOverdue is true', () => {
+    expect(resolve('24h', [], { includeOverdue: true })).toMatchObject({
+      startMs: NOW - DAY,
+      endMs: NOW + DAY,
+    })
+    const window = resolve('30d', [-60 * DAY, 10 * DAY], { includeOverdue: true })
+    expect(window.startMs).toBe(NOW - 60 * DAY)
+    expect(window.endMs).toBe(NOW + 30 * DAY)
   })
 })
 
