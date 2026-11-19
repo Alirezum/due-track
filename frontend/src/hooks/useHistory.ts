@@ -1,9 +1,12 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiRequest } from '@/api/client'
 import type { HistoryResponse, UndoResponse } from '@/api/types'
-import { itemsQueryKey } from '@/hooks/useItems'
+import {
+  historyQueryKey,
+  invalidateHistoryAndDeadlines,
+} from '@/lib/queryKeys'
 
-export const historyQueryKey = ['history'] as const
+export { historyQueryKey }
 
 export async function fetchHistory(
   limit = 50,
@@ -36,10 +39,7 @@ function useRefreshAfterHistoryChange() {
   const queryClient = useQueryClient()
 
   return async () => {
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: historyQueryKey }),
-      queryClient.invalidateQueries({ queryKey: itemsQueryKey }),
-    ])
+    await invalidateHistoryAndDeadlines(queryClient)
   }
 }
 

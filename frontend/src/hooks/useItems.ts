@@ -2,8 +2,9 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import { apiRequest } from '@/api/client'
 import type { DueItem, ItemCreate, ItemListResponse, ItemUpdate } from '@/api/types'
 import { EMPTY_FILTERS, filtersToQueryString, type ItemFilters } from '@/lib/filters'
+import { invalidateDeadlineQueries, itemsQueryKey } from '@/lib/queryKeys'
 
-export const itemsQueryKey = ['items'] as const
+export { itemsQueryKey }
 
 const JSON_HEADERS = { 'content-type': 'application/json' }
 
@@ -47,7 +48,7 @@ export function useCreateItem() {
   return useMutation({
     mutationFn: createItem,
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: itemsQueryKey })
+      await invalidateDeadlineQueries(queryClient)
     },
   })
 }
@@ -58,7 +59,7 @@ export function useUpdateItem() {
   return useMutation({
     mutationFn: ({ id, ...payload }: { id: number } & ItemUpdate) => updateItem(id, payload),
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: itemsQueryKey })
+      await invalidateDeadlineQueries(queryClient)
     },
   })
 }
@@ -69,7 +70,7 @@ export function useDeleteItem() {
   return useMutation({
     mutationFn: deleteItem,
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: itemsQueryKey })
+      await invalidateDeadlineQueries(queryClient)
     },
   })
 }

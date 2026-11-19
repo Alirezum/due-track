@@ -24,6 +24,24 @@
   --input: oklch(0.89 0.012 150);
   --ring: oklch(0.52 0.07 165);
   --radius: 0.5rem;
+  --timeline-paper: oklch(0.972 0.008 105);
+  --timeline-grid: oklch(0.86 0.02 150 / 45%);
+  --timeline-rule: oklch(0.55 0.035 160);
+  --timeline-tick: oklch(0.48 0.03 160);
+  --timeline-now: oklch(0.52 0.17 32);
+  --timeline-now-foreground: oklch(0.99 0.005 95);
+  --timeline-overdue: oklch(0.47 0.16 22);
+  --timeline-overdue-soft: oklch(0.95 0.035 25);
+  --timeline-imminent: oklch(0.47 0.115 65);
+  --timeline-imminent-soft: oklch(0.96 0.05 80);
+  --timeline-soon: oklch(0.38 0.08 165);
+  --timeline-soon-soft: oklch(0.94 0.03 160);
+  --timeline-later: oklch(0.46 0.022 160);
+  --timeline-later-soft: oklch(0.94 0.008 150);
+  --timeline-cluster: oklch(0.3 0.05 165);
+  --timeline-cluster-foreground: oklch(0.98 0.005 100);
+  --timeline-highlight: oklch(0.66 0.13 85);
+  --timeline-edge: oklch(0.6 0.03 160);
 }
 
 .dark {
@@ -46,6 +64,24 @@
   --border: oklch(1 0 0 / 12%);
   --input: oklch(1 0 0 / 16%);
   --ring: oklch(0.65 0.055 160);
+  --timeline-paper: oklch(0.185 0.016 160);
+  --timeline-grid: oklch(1 0 0 / 7%);
+  --timeline-rule: oklch(0.58 0.03 160);
+  --timeline-tick: oklch(0.72 0.02 160);
+  --timeline-now: oklch(0.72 0.16 38);
+  --timeline-now-foreground: oklch(0.17 0.02 160);
+  --timeline-overdue: oklch(0.76 0.13 25);
+  --timeline-overdue-soft: oklch(0.25 0.05 25);
+  --timeline-imminent: oklch(0.82 0.12 80);
+  --timeline-imminent-soft: oklch(0.27 0.05 80);
+  --timeline-soon: oklch(0.8 0.08 160);
+  --timeline-soon-soft: oklch(0.25 0.035 160);
+  --timeline-later: oklch(0.72 0.02 160);
+  --timeline-later-soft: oklch(0.24 0.012 160);
+  --timeline-cluster: oklch(0.85 0.045 160);
+  --timeline-cluster-foreground: oklch(0.17 0.02 160);
+  --timeline-highlight: oklch(0.84 0.13 85);
+  --timeline-edge: oklch(0.65 0.03 160);
 }
 
 @theme inline {
@@ -70,6 +106,24 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-timeline-paper: var(--timeline-paper);
+  --color-timeline-grid: var(--timeline-grid);
+  --color-timeline-rule: var(--timeline-rule);
+  --color-timeline-tick: var(--timeline-tick);
+  --color-timeline-now: var(--timeline-now);
+  --color-timeline-now-foreground: var(--timeline-now-foreground);
+  --color-timeline-overdue: var(--timeline-overdue);
+  --color-timeline-overdue-soft: var(--timeline-overdue-soft);
+  --color-timeline-imminent: var(--timeline-imminent);
+  --color-timeline-imminent-soft: var(--timeline-imminent-soft);
+  --color-timeline-soon: var(--timeline-soon);
+  --color-timeline-soon-soft: var(--timeline-soon-soft);
+  --color-timeline-later: var(--timeline-later);
+  --color-timeline-later-soft: var(--timeline-later-soft);
+  --color-timeline-cluster: var(--timeline-cluster);
+  --color-timeline-cluster-foreground: var(--timeline-cluster-foreground);
+  --color-timeline-highlight: var(--timeline-highlight);
+  --color-timeline-edge: var(--timeline-edge);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -83,5 +137,27 @@
 
   body {
     @apply bg-background text-foreground antialiased;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-timeline] *,
+  [data-timeline] *::before,
+  [data-timeline] *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  [data-timeline] [data-timeline-marker],
+  [data-timeline] [data-timeline-marker]:hover {
+    transform: none !important;
+  }
+
+  [data-timeline] .timeline-shimmer,
+  [data-timeline] .timeline-highlight,
+  [data-timeline] .timeline-cluster-panel {
+    animation: none !important;
   }
 }

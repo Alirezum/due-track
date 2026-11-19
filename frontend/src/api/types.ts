@@ -130,6 +130,21 @@ export interface HistoryResponse {
   total: number
 }
 
+export type Urgency = 'overdue' | 'due_now' | 'within_24h' | 'within_7d' | 'later'
+
+export interface TimelineEntry {
+  item: DueItem
+  urgency: Urgency
+  seconds_until_due: number
+}
+
+export interface TimelineResponse {
+  reference_time_utc: ISODateTime
+  timezone: string
+  currency_code: string
+  entries: TimelineEntry[]
+}
+
 export interface ValidationErrorItem {
   loc: Array<string | number>
   msg: string
