@@ -1,0 +1,265 @@
+openapi: 3.1.0
+info:
+  title: due-track Upcoming-Only Focus — additive contract fragment
+  version: 1.0.0
+  description: |
+    Additive feature-level contract for the Upcoming-Only Deadline Focus.
+
+    This document is a **delta**, not a second source of truth. During implementation the
+    `scope` query parameter is merged into `GET /api/items` and `GET /api/timeline`, and
+    `overdue_count` is added to `TimelineResponse` in the living app-wide contract at
+    `specs/001-due-track-v1/contracts/openapi.yaml`. The backend contract test continues to
+    validate the living document.
+
+    No path, operation, or existing field is removed or retyped. The API default remains
+    `scope=all`, preserving pre-003 behavior. The Dashboard and Timeline explicitly request
+    `scope=upcoming`; History and the Dashboard category source keep the default.
+
+    **Compatibility note for 1.2.0**: `TimelineResponse` gains one required field,
+    `overdue_count`. Requests remain backward compatible because `scope` defaults to `all`, but
+    strict 1.1.0 response validators (`additionalProperties: false`) must update to the 1.2.0
+    schema. This is a documented consumer update for a local-first, single-consumer app, not a
+    data migration.
+
+    The feature introduces no persisted fields, no migration, and no changes to completion,
+    undo, deletion, history, recurrence, or amount storage. The reveal state is session-only
+    client state and therefore has no API parameter.
+  termsOfService: http://127.0.0.1:8000/
+  contact:
+    name: due-track
+servers:
+  - url: http://127.0.0.1:8000
+    description: Local development and production server
+security: []
+tags:
+  - name: Items
+    description: Active item CRUD, dashboard grouping, filters, and completion.
+  - name: Timeline
+    description: Read-only timeline projection of filtered active deadlines.
+
+paths:
+  /api/items:
+    get:
+      tags: [Items]
+      operationId: listItems
+      summary: List active items grouped by status bucket (scope-aware)
+      description: |
+        Existing behavior is unchanged when `scope` is omitted or `scope=all`.
+
+        `scope=upcoming` returns only deadlines due at or after the server reference time:
+        the `due_today`, `upcoming`, and `later` buckets are unchanged, while
+        `buckets.overdue` is always `[]`. `summary.overdue_count` is still computed from
+        the filtered active set before the overdue bucket is emptied, so the focused view
+        can report an accurate count without rendering overdue deadline entries.
+
+        Bucket rules, with an explicit reference time and the application timezone:
+        - **Overdue**: `due_at_utc < reference_time`. Items due earlier today are Overdue.
+        - **Due Today**: local due date is today and the item is not Overdue. A timed item
+          due exactly at the reference time is Due Today. A date-only item remains Due
+          Today until the local day ends.
+        - **Upcoming**: local due date is tomorrow through today + 7 calendar days inclusive.
+        - **Later**: local due date is today + 8 calendar days or later.
+
+        Filters combine with AND semantics and apply identically to the visible buckets and
+        the overdue count. Completed and deleted items never appear.
+      parameters:
+        - $ref: '#/components/parameters/Scope'
+        - name: category
+          in: query
+          required: false
+          description: Case-insensitive exact match on the item's free-text category label.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 50
+        - name: priority
+          in: query
+          required: false
+          schema:
+            $ref: '../../001-due-track-v1/contracts/openapi.yaml#/components/schemas/Priority'
+        - name: recurring
+          in: query
+          required: false
+          schema:
+            type: boolean
+        - name: q
+          in: query
+          required: false
+          description: Case-insensitive substring search across title and notes.
+          schema:
+            type: string
+            maxLength: 200
+      responses:
+        '200':
+          description: Filtered active items grouped by status bucket.
+          content:
+            application/json:
+              schema:
+                $ref: '../../001-due-track-v1/contracts/openapi.yaml#/components/schemas/ItemListResponse'
+              examples:
+                upcomingOnly:
+                  summary: Two overdue deadlines are counted but not returned as entries
+                  value:
+                    buckets:
+                      overdue: []
+                      due_today: []
+                      upcoming:
+                        - id: 12
+                          title: Rent
+                          notes: Apartment 4B
+                          due_at_utc: '2026-11-07T04:59:59.999999Z'
+                          is_date_only: true
+                          due_local_date: '2026-11-06'
+                          due_local_time: null
+                          category: Bills
+                          priority: critical
+                          amount_cents: 120000
+                          recurrence_freq: monthly
+                          recurrence_interval: 1
+                          recurrence_anchor_mode: schedule
+                          recurrence_anchor_day: 6
+                          recurrence_end_date: null
+                          recurrence_remaining_count: null
+                          status: active
+                          is_recurring: true
+                          created_at_utc: '2026-10-01T12:00:00Z'
+                          updated_at_utc: '2026-10-01T12:00:00Z'
+                      later: []
+                    summary:
+                      overdue_count: 2
+                      due_today_count: 0
+                      upcoming_total_cents: 120000
+                    currency_code: USD
+                    timezone: America/New_York
+        '422':
+          $ref: '../../001-due-track-v1/contracts/openapi.yaml#/components/responses/ValidationError'
+
+  /api/timeline:
+    get:
+      tags: [Timeline]
+      operationId: getTimeline
+      summary: List filtered active deadlines in chronological order (scope-aware)
+      description: |
+        Existing behavior is unchanged when `scope` is omitted or `scope=all`.
+
+        `scope=upcoming` omits entries whose server-computed `urgency` is `overdue`.
+        `overdue_count` is always the number of filtered active overdue deadlines,
+        regardless of scope, so the focused view can report an accurate count while the
+        overdue entries are hidden.
+
+        Entries are sorted by due instant ascending, then priority descending
+        (`critical` > `high` > `medium` > `low`), then title ascending
+        (case-insensitively), with `id` as the final stable tie-breaker.
+
+        Urgency boundaries, evaluated against `reference_time_utc`:
+        - **overdue**: `due_at_utc < reference_time_utc`
+        - **due_now**: `due_at_utc == reference_time_utc`
+        - **within_24h**: `0 < due_at_utc - reference_time_utc <= 24 hours`
+        - **within_7d**: `24 hours < due_at_utc - reference_time_utc <= 7 days`
+        - **later**: more than 7 days remaining
+
+        Filters combine with AND semantics and match `GET /api/items` exactly. Completed and
+        deleted items never appear. An empty upcoming result returns `entries: []` with the
+        accurate `overdue_count`.
+      parameters:
+        - $ref: '#/components/parameters/Scope'
+        - name: category
+          in: query
+          required: false
+          description: Case-insensitive exact match on the item's free-text category label.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 50
+        - name: priority
+          in: query
+          required: false
+          schema:
+            $ref: '../../001-due-track-v1/contracts/openapi.yaml#/components/schemas/Priority'
+        - name: recurring
+          in: query
+          required: false
+          description: |
+            `true` selects recurring items (`recurrence_freq != none`);
+            `false` selects one-time items (`recurrence_freq == none`).
+          schema:
+            type: boolean
+        - name: q
+          in: query
+          required: false
+          description: Case-insensitive substring search across title and notes.
+          schema:
+            type: string
+            maxLength: 200
+      responses:
+        '200':
+          description: Filtered active deadlines in chronological order.
+          content:
+            application/json:
+              schema:
+                $ref: '../../001-due-track-v1/contracts/openapi.yaml#/components/schemas/TimelineResponse'
+              examples:
+                upcomingOnly:
+                  summary: Upcoming entries with two overdue deadlines summarized
+                  value:
+                    reference_time_utc: '2026-11-05T12:00:00Z'
+                    timezone: America/New_York
+                    currency_code: USD
+                    overdue_count: 2
+                    entries:
+                      - item:
+                          id: 12
+                          title: Rent
+                          notes: Apartment 4B
+                          due_at_utc: '2026-11-07T14:00:00Z'
+                          is_date_only: false
+                          due_local_date: '2026-11-07'
+                          due_local_time: '09:00'
+                          category: Bills
+                          priority: critical
+                          amount_cents: 120000
+                          recurrence_freq: monthly
+                          recurrence_interval: 1
+                          recurrence_anchor_mode: schedule
+                          recurrence_anchor_day: 7
+                          recurrence_end_date: null
+                          recurrence_remaining_count: null
+                          status: active
+                          is_recurring: true
+                          created_at_utc: '2026-10-01T12:00:00Z'
+                          updated_at_utc: '2026-10-01T12:00:00Z'
+                        urgency: within_7d
+                        seconds_until_due: 180000
+        '422':
+          $ref: '../../001-due-track-v1/contracts/openapi.yaml#/components/responses/ValidationError'
+
+components:
+  parameters:
+    Scope:
+      name: scope
+      in: query
+      required: false
+      description: |
+        `all` (default) returns every filtered active deadline, preserving pre-003 behavior.
+        `upcoming` returns only deadlines due at or after the server reference time and
+        summarizes overdue deadlines with an accurate count.
+      schema:
+        type: string
+        enum: [upcoming, all]
+        default: all
+
+  schemas:
+    TimelineResponseDelta:
+      type: object
+      additionalProperties: false
+      required: [overdue_count]
+      description: |
+        Delta merged into `TimelineResponse` in the living 1.2.0 contract. The required field is
+        the one response compatibility change; strict 1.1.0 validators must update.
+      properties:
+        overdue_count:
+          type: integer
+          minimum: 0
+          description: |
+            Number of filtered active overdue deadlines, independent of `scope`.
+            Computed against the same `reference_time_utc` used for entry urgency.
