@@ -109,6 +109,21 @@ npm run build      # runs tsc -b && vite build
 The required frontend gate is `npm run build`; `test:run` is required for behavior changes. Commit
 per analyzed task, as required by the constitution.
 
+## Security & Privacy Review
+
+Reviewed `backend/src/due_track` and `frontend/src` on 2026-11-05.
+
+| Check | Result |
+|-------|--------|
+| Loopback binding | PASS — the default is `DUE_TRACK_HOST=127.0.0.1`, and `due_track.main` binds the configured host. **Caveat:** an operator can override the variable; keep the default for local-only access. |
+| No telemetry or external requests | PASS — the frontend `apiRequest` helper calls relative `/api` paths only; no analytics, telemetry, external fonts, or CDN assets are loaded. |
+| Plain-text notes | PASS — notes render as escaped React text in the dashboard and history views; no `dangerouslySetInnerHTML` or raw HTML insertion. |
+| Parameterized SQL | PASS — all values use bound parameters. Interpolated identifiers come from fixed repository column allowlists, and migration SQL is read from repository-controlled files. |
+| Timezone boundary | PASS — only `api/time.py` converts between UTC and local time. `config.py` imports `ZoneInfo` solely to validate the configured IANA name, and domain modules are timezone-free. |
+| Secrets | PASS — no credentials, API keys, tokens, or secrets are present in source or configuration defaults. |
+
+No unresolved caveats.
+
 ## Manual Validation
 
 Use a fresh database (`DUE_TRACK_DB_PATH=/tmp/due-track-check.sqlite3`) and a fixed
