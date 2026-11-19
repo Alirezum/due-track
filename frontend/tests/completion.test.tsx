@@ -173,6 +173,6 @@ describe('completion', () => {
     await waitFor(() => {
       expect(screen.queryByText('Renew passport')).not.toBeInTheDocument()
     })
-    expect(await screen.findByText('Nothing later')).toBeInTheDocument()
+    expect(await screen.findByText('Nothing on the ledger yet.')).toBeInTheDocument()
   })
 })

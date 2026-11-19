@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Plus } from 'lucide-react'
+import { useQueryClient } from '@tanstack/react-query'
 import { ApiError } from '@/api/client'
 import type { DueItem, ItemCreate, ItemListResponse, ItemUpdate } from '@/api/types'
 import { BucketSection } from '@/components/BucketSection'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { FilterBar } from '@/components/FilterBar'
 import { ItemForm } from '@/components/ItemForm'
+import { OverdueIndicator } from '@/components/OverdueIndicator'
 import { ShortcutHelp } from '@/components/ShortcutHelp'
 import { Button } from '@/components/ui/button'
 import {
@@ -16,10 +18,25 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { useCompleteItem } from '@/hooks/useCompleteItem'
-import { useCreateItem, useDeleteItem, useItems, useUpdateItem } from '@/hooks/useItems'
+import {
+  fetchItems,
+  itemsQueryKey,
+  useCreateItem,
+  useDeleteItem,
+  useItems,
+  useUpdateItem,
+} from '@/hooks/useItems'
 import { useShortcuts } from '@/hooks/useShortcuts'
 import { EMPTY_FILTERS, hasActiveFilters, type ItemFilters } from '@/lib/filters'
-import { formatAmount } from '@/lib/format'
+
+const REFETCH_INTERVAL_MS = 55_000
+const OVERDUE_LABEL_ID = 'dashboard-overdue-label'
+const OVERDUE_REGION_ID = 'dashboard-overdue-region'
+
+type HiddenItemNotice = {
+  item: DueItem
+  reason: 'overdue' | 'filtered'
+}
 
 function describeError(error: unknown): string {
   if (error instanceof ApiError) {
@@ -48,9 +65,43 @@ function categoriesFrom(data: ItemListResponse | undefined): string[] {
   return [...categories].sort((a, b) => a.localeCompare(b))
 }
 
+function allBucketItems(data: ItemListResponse): DueItem[] {
+  return [
+    ...data.buckets.overdue,
+    ...data.buckets.due_today,
+    ...data.buckets.upcoming,
+    ...data.buckets.later,
+  ]
+}
+
+function findItem(data: ItemListResponse | undefined, id: number): DueItem | null {
+  if (!data) {
+    return null
+  }
+  return allBucketItems(data).find((item) => item.id === id) ?? null
+}
+
+function isOverdueIn(data: ItemListResponse, id: number): boolean {
+  return data.buckets.overdue.some((item) => item.id === id)
+}
+
+function pluralDeadlines(count: number): string {
+  return count === 1 ? '1 deadline is overdue.' : `${count} deadlines are overdue.`
+}
+
+function pluralOverdue(count: number): string {
+  return count === 1 ? '1 overdue deadline matches.' : `${count} overdue deadlines match.`
+}
+
 export function DashboardPage() {
+  const queryClient = useQueryClient()
   const [filters, setFilters] = useState<ItemFilters>(EMPTY_FILTERS)
-  const { data, isPending, isFetching, isError, error, refetch } = useItems(filters)
+  const [showOverdue, setShowOverdue] = useState(false)
+  const { data, isPending, isFetching, isPlaceholderData, isError, error, refetch } = useItems(
+    filters,
+    showOverdue ? 'all' : 'upcoming',
+    { refetchInterval: REFETCH_INTERVAL_MS, refetchOnWindowFocus: true },
+  )
   const categorySource = useItems()
   const categories = useMemo(() => categoriesFrom(categorySource.data), [categorySource.data])
   const createItem = useCreateItem()
@@ -66,23 +117,42 @@ export function DashboardPage() {
   const [helpOpen, setHelpOpen] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [pageError, setPageError] = useState<string | null>(null)
+  const [hiddenItem, setHiddenItem] = useState<HiddenItemNotice | null>(null)
+  const [announcement, setAnnouncement] = useState('')
+  const [pendingRevealFocus, setPendingRevealFocus] = useState(false)
+  const [pendingHideFocus, setPendingHideFocus] = useState(false)
 
+  const visibleOverdue = useMemo(
+    () => (showOverdue && data ? data.buckets.overdue : []),
+    [data, showOverdue],
+  )
   const flatItems = useMemo(
     () =>
       data
         ? [
-            ...data.buckets.overdue,
+            ...visibleOverdue,
             ...data.buckets.due_today,
             ...data.buckets.upcoming,
             ...data.buckets.later,
           ]
         : [],
-    [data],
+    [data, visibleOverdue],
   )
   const activeItem = useMemo(
     () => flatItems.find((item) => item.id === activeItemId) ?? null,
     [activeItemId, flatItems],
   )
+  const visibleUpcomingCount =
+    (data?.buckets.due_today.length ?? 0) +
+    (data?.buckets.upcoming.length ?? 0) +
+    (data?.buckets.later.length ?? 0)
+  const overdueCount = data?.summary.overdue_count ?? 0
+  const filtersActive = hasActiveFilters(filters)
+  const trulyEmpty =
+    data !== undefined &&
+    !filtersActive &&
+    visibleUpcomingCount === 0 &&
+    overdueCount === 0
 
   useEffect(() => {
     if (activeItemId === null) {
@@ -91,6 +161,41 @@ export function DashboardPage() {
     const node = document.querySelector<HTMLElement>(`[data-item-id="${activeItemId}"]`)
     node?.focus()
   }, [activeItemId])
+
+  useEffect(() => {
+    if (activeItemId === null || flatItems.some((item) => item.id === activeItemId)) {
+      return
+    }
+    const next = flatItems[0]?.id ?? null
+    setActiveItemId(next)
+    setAnnouncement(next === null ? 'No upcoming deadlines remain.' : 'Selected the next deadline.')
+  }, [activeItemId, flatItems])
+
+  useEffect(() => {
+    if (!pendingRevealFocus || !showOverdue || isPlaceholderData) {
+      return
+    }
+    const first = visibleOverdue[0]
+    if (first) {
+      setActiveItemId(first.id)
+      document.querySelector<HTMLElement>(`[data-item-id="${first.id}"]`)?.focus()
+      setAnnouncement('Showing overdue deadlines.')
+    } else {
+      document.getElementById(OVERDUE_REGION_ID)?.focus()
+      setAnnouncement('Showing overdue deadlines.')
+    }
+    setPendingRevealFocus(false)
+  }, [isPlaceholderData, pendingRevealFocus, showOverdue, visibleOverdue])
+
+  useEffect(() => {
+    if (!pendingHideFocus || showOverdue) {
+      return
+    }
+    document
+      .querySelector<HTMLElement>(`[aria-controls="${OVERDUE_REGION_ID}"]`)
+      ?.focus()
+    setPendingHideFocus(false)
+  }, [pendingHideFocus, showOverdue])
 
   function openCreate() {
     setFormError(null)
@@ -102,10 +207,53 @@ export function DashboardPage() {
     setEditingItem(item)
   }
 
+  function revealOverdue() {
+    setHiddenItem(null)
+    setPendingRevealFocus(true)
+    setShowOverdue(true)
+  }
+
+  function hideOverdue() {
+    setHiddenItem(null)
+    setActiveItemId(null)
+    setPendingHideFocus(true)
+    setShowOverdue(false)
+    setAnnouncement('Showing upcoming deadlines only.')
+  }
+
+  async function noticeForSavedItem(saved: DueItem): Promise<HiddenItemNotice | null> {
+    if (showOverdue) {
+      return null
+    }
+
+    const allScoped = await queryClient.fetchQuery({
+      queryKey: [...itemsQueryKey, filters, 'all'],
+      queryFn: () => fetchItems(filters, 'all'),
+    })
+    if (findItem(allScoped, saved.id)) {
+      return isOverdueIn(allScoped, saved.id) ? { item: saved, reason: 'overdue' } : null
+    }
+
+    const unfiltered: ItemListResponse =
+      categorySource.data ??
+      (await queryClient.fetchQuery<ItemListResponse>({
+        queryKey: [...itemsQueryKey, EMPTY_FILTERS, 'all'],
+        queryFn: () => fetchItems(EMPTY_FILTERS, 'all'),
+      }))
+    if (!findItem(unfiltered, saved.id)) {
+      return null
+    }
+    if (isOverdueIn(unfiltered, saved.id)) {
+      return { item: saved, reason: 'overdue' }
+    }
+    return hasActiveFilters(filters) ? { item: saved, reason: 'filtered' } : null
+  }
+
   async function handleCreate(payload: ItemCreate | ItemUpdate) {
     setFormError(null)
     try {
-      await createItem.mutateAsync(payload as ItemCreate)
+      const saved = await createItem.mutateAsync(payload as ItemCreate)
+      setHiddenItem(await noticeForSavedItem(saved))
       setCreateOpen(false)
     } catch (error) {
       setFormError(describeError(error))
@@ -118,7 +266,8 @@ export function DashboardPage() {
     }
     setFormError(null)
     try {
-      await updateItem.mutateAsync({ id: editingItem.id, ...(payload as ItemUpdate) })
+      const saved = await updateItem.mutateAsync({ id: editingItem.id, ...(payload as ItemUpdate) })
+      setHiddenItem(await noticeForSavedItem(saved))
       setEditingItem(null)
     } catch (error) {
       setFormError(describeError(error))
@@ -203,7 +352,7 @@ export function DashboardPage() {
     { enabled: !overlayOpen },
   )
 
-  if (isPending) {
+  if (isPending && !data) {
     return (
       <section className="grid gap-4" aria-busy="true">
         <p className="text-sm text-muted-foreground">Loading deadlines…</p>
@@ -212,11 +361,11 @@ export function DashboardPage() {
     )
   }
 
-  if (isError || !data) {
+  if (!data) {
     return (
       <section className="grid max-w-xl gap-3">
         <h1 className="font-display text-4xl font-semibold tracking-[-0.035em]">
-          The dashboard did not load.
+          The dashboard could not be read.
         </h1>
         <p className="text-muted-foreground">{describeError(error)}</p>
         <Button type="button" className="w-fit" onClick={() => void refetch()}>
@@ -226,58 +375,76 @@ export function DashboardPage() {
     )
   }
 
-  const { buckets, summary, currency_code: currencyCode } = data
-  const upcomingTotal = formatAmount(summary.upcoming_total_cents, currencyCode) ?? '—'
-  const visibleCount =
-    buckets.overdue.length +
-    buckets.due_today.length +
-    buckets.upcoming.length +
-    buckets.later.length
-  const filtersActive = hasActiveFilters(filters)
+  const { buckets, summary } = data
+  const overdueButton = (
+    <Button
+      type="button"
+      size="sm"
+      variant="secondary"
+      onClick={revealOverdue}
+      className="w-fit"
+    >
+      Show overdue
+    </Button>
+  )
+
+  if (trulyEmpty) {
+    return (
+      <div className="grid gap-10">
+        <DashboardHeader onCreate={openCreate} />
+        <section
+          aria-label="Empty ledger"
+          className="border-y border-dashed border-border py-16 text-center"
+        >
+          <h2 className="font-display text-2xl font-semibold tracking-[-0.025em]">
+            Nothing on the ledger yet.
+          </h2>
+          <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
+            Add your first deadline and it will appear here when it is upcoming.
+          </p>
+          <Button type="button" className="mt-5" onClick={openCreate}>
+            <Plus aria-hidden="true" />
+            New deadline
+          </Button>
+        </section>
+      </div>
+    )
+  }
+
+  const noUpcoming = visibleUpcomingCount === 0
+  const onlyOverdueHidden = noUpcoming && overdueCount > 0 && !showOverdue
+  const noResults = filtersActive && noUpcoming && overdueCount === 0
+  const listLabel = showOverdue ? 'Deadlines including overdue' : 'Upcoming deadlines'
 
   return (
     <div className="grid gap-10">
-      <header className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
-        <div className="max-w-2xl">
-          <h1 className="font-display text-4xl font-semibold tracking-[-0.04em] text-balance sm:text-5xl">
-            Deadlines, in order.
-          </h1>
-          <p className="mt-3 max-w-prose text-muted-foreground">
-            A local ledger of what is overdue, what is due today, and what is coming. Nothing leaves
-            this machine.
-          </p>
-        </div>
-        <Button type="button" size="lg" onClick={openCreate} className="w-fit">
-          <Plus aria-hidden="true" />
-          New deadline
-        </Button>
-      </header>
+      <DashboardHeader onCreate={openCreate} showOverdue={showOverdue} />
 
       <section
         aria-label="Dashboard summary"
         className="flex flex-wrap items-baseline gap-x-8 gap-y-3 border-y border-border py-4"
       >
-        <span className="inline-flex items-baseline gap-2">
-          <strong className="font-display text-3xl font-semibold tabular-nums">
-            {summary.overdue_count}
-          </strong>
-          <span className="text-sm text-muted-foreground">Overdue</span>
-        </span>
-        <span className="inline-flex items-baseline gap-2">
-          <strong className="font-display text-3xl font-semibold tabular-nums">
-            {summary.due_today_count}
-          </strong>
-          <span className="text-sm text-muted-foreground">Due today</span>
-        </span>
-        <span className="inline-flex items-baseline gap-2">
-          <strong className="font-display text-3xl font-semibold tabular-nums">
-            {upcomingTotal}
-          </strong>
-          <span className="text-sm text-muted-foreground">Upcoming total</span>
+        <SummaryCell value={buckets.upcoming.length} label="Next 7 days" />
+        <SummaryCell value={summary.due_today_count} label="Due today" />
+        <SummaryCell value={summary.overdue_count} label="Overdue" />
+        <span className="ml-auto text-xs text-muted-foreground" aria-live="polite">
+          {isFetching ? 'Updating…' : ''}
         </span>
       </section>
 
       <FilterBar filters={filters} categories={categories} onChange={setFilters} />
+
+      {isError ? (
+        <p
+          role="alert"
+          className="flex flex-wrap items-center gap-3 border-l-2 border-destructive pl-3 text-sm text-destructive"
+        >
+          The dashboard could not be updated. {describeError(error)}
+          <Button type="button" variant="ghost" size="sm" onClick={() => void refetch()}>
+            Retry
+          </Button>
+        </p>
+      ) : null}
 
       {pageError ? (
         <p className="border-l-2 border-destructive pl-3 text-sm text-destructive" role="alert">
@@ -285,11 +452,45 @@ export function DashboardPage() {
         </p>
       ) : null}
 
+      {hiddenItem ? (
+        <div
+          role="status"
+          className="flex flex-wrap items-center gap-3 border-l-2 border-timeline-overdue bg-timeline-overdue-soft/40 py-2 pl-3 text-sm"
+        >
+          <span>
+            Saved “{hiddenItem.item.title}”.{' '}
+            {hiddenItem.reason === 'overdue'
+              ? 'It is overdue, so it is hidden by the upcoming focus.'
+              : 'It is hidden by the current filters.'}
+          </span>
+          {hiddenItem.reason === 'overdue' ? (
+            <Button type="button" variant="ghost" size="sm" onClick={revealOverdue}>
+              Show overdue
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setFilters(EMPTY_FILTERS)
+                setHiddenItem(null)
+              }}
+            >
+              Clear filters
+            </Button>
+          )}
+        </div>
+      ) : null}
+
+      <p className="sr-only" aria-live="polite">
+        {announcement}
+      </p>
       <p className="sr-only" aria-live="polite">
         {activeItem ? `Active deadline: ${activeItem.title}` : ''}
       </p>
 
-      {filtersActive && visibleCount === 0 ? (
+      {noResults ? (
         <section
           aria-label="Filtered results"
           className="border-y border-dashed border-border py-12 text-center"
@@ -300,39 +501,101 @@ export function DashboardPage() {
           <p className="mt-2 text-sm text-muted-foreground">
             Clear filters to see the full ledger.
           </p>
+          <Button
+            type="button"
+            variant="secondary"
+            className="mt-5"
+            onClick={() => setFilters(EMPTY_FILTERS)}
+          >
+            Clear filters
+          </Button>
         </section>
+      ) : onlyOverdueHidden ? (
+        <div className="grid gap-8">
+          <OverdueIndicator
+            id={OVERDUE_LABEL_ID}
+            count={overdueCount}
+            expanded={false}
+            controls={OVERDUE_REGION_ID}
+            onToggle={revealOverdue}
+          />
+          <section
+            aria-label="Upcoming deadlines"
+            className="border-y border-dashed border-border py-12 text-center"
+          >
+            <h2 className="font-display text-2xl font-semibold tracking-[-0.025em]">
+              {filtersActive ? 'No upcoming deadlines match these filters.' : 'Nothing is upcoming.'}
+            </h2>
+            <p className="mt-2 text-sm text-muted-foreground">
+              {filtersActive ? pluralOverdue(overdueCount) : pluralDeadlines(overdueCount)}
+            </p>
+            <div className="mt-5 flex flex-wrap justify-center gap-2">
+              <Button type="button" onClick={openCreate}>
+                <Plus aria-hidden="true" />
+                New deadline
+              </Button>
+              {filtersActive ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => setFilters(EMPTY_FILTERS)}
+                >
+                  Clear filters
+                </Button>
+              ) : null}
+              {overdueButton}
+            </div>
+          </section>
+        </div>
       ) : (
-        <div
+        <section
+          aria-label={listLabel}
           aria-busy={isFetching}
           className="grid gap-x-12 gap-y-10 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]"
         >
           <div className="grid content-start gap-10">
-            <BucketSection
-              id="overdue"
-              title="Overdue"
-              tone="overdue"
-              items={buckets.overdue}
-              emptyLabel="Nothing overdue"
-              currencyCode={currencyCode}
-              onEdit={openEdit}
-              onDelete={setDeletingItem}
-              onComplete={(item) => void handleComplete(item)}
-              completingItemId={completingItemId}
-              activeItemId={activeItemId}
+            <OverdueIndicator
+              id={OVERDUE_LABEL_ID}
+              count={overdueCount}
+              expanded={showOverdue}
+              controls={OVERDUE_REGION_ID}
+              onToggle={showOverdue ? hideOverdue : revealOverdue}
             />
+            {showOverdue ? (
+              <div id={OVERDUE_REGION_ID} tabIndex={-1} className="outline-none">
+                <BucketSection
+                  id="overdue"
+                  title="Overdue"
+                  tone="overdue"
+                  items={visibleOverdue}
+                  emptyLabel="Nothing overdue"
+                  currencyCode={data.currency_code}
+                  onEdit={openEdit}
+                  onDelete={setDeletingItem}
+                  onComplete={(item) => void handleComplete(item)}
+                  completingItemId={completingItemId}
+                  activeItemId={activeItemId}
+                />
+              </div>
+            ) : null}
             <BucketSection
               id="due-today"
               title="Due today"
               tone="today"
               items={buckets.due_today}
               emptyLabel="Nothing due today"
-              currencyCode={currencyCode}
+              currencyCode={data.currency_code}
               onEdit={openEdit}
               onDelete={setDeletingItem}
               onComplete={(item) => void handleComplete(item)}
               completingItemId={completingItemId}
               activeItemId={activeItemId}
             />
+            {showOverdue && noUpcoming && overdueCount > 0 ? (
+              <p className="border-l border-dashed border-border pl-3 text-sm text-muted-foreground">
+                Nothing is upcoming. {pluralDeadlines(overdueCount)}
+              </p>
+            ) : null}
           </div>
           <div className="grid content-start gap-10">
             <BucketSection
@@ -341,7 +604,7 @@ export function DashboardPage() {
               tone="upcoming"
               items={buckets.upcoming}
               emptyLabel="Nothing in the next seven days"
-              currencyCode={currencyCode}
+              currencyCode={data.currency_code}
               onEdit={openEdit}
               onDelete={setDeletingItem}
               onComplete={(item) => void handleComplete(item)}
@@ -354,7 +617,7 @@ export function DashboardPage() {
               tone="later"
               items={buckets.later}
               emptyLabel="Nothing later"
-              currencyCode={currencyCode}
+              currencyCode={data.currency_code}
               onEdit={openEdit}
               onDelete={setDeletingItem}
               onComplete={(item) => void handleComplete(item)}
@@ -362,7 +625,7 @@ export function DashboardPage() {
               activeItemId={activeItemId}
             />
           </div>
-        </div>
+        </section>
       )}
 
       {createOpen ? (
@@ -426,5 +689,43 @@ export function DashboardPage() {
 
       <ShortcutHelp open={helpOpen} onOpenChange={setHelpOpen} />
     </div>
+  )
+}
+
+function SummaryCell({ value, label }: { value: number; label: string }) {
+  return (
+    <span className="inline-flex items-baseline gap-2" data-summary={label}>
+      <strong className="font-display text-2xl font-semibold tabular-nums">{value}</strong>
+      <span className="font-sans text-[0.6875rem] font-semibold tracking-[0.14em] text-muted-foreground uppercase">
+        {label}
+      </span>
+    </span>
+  )
+}
+
+function DashboardHeader({
+  onCreate,
+  showOverdue = false,
+}: {
+  onCreate: () => void
+  showOverdue?: boolean
+}) {
+  return (
+    <header className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+      <div className="max-w-2xl">
+        <h1 className="font-display text-4xl font-semibold tracking-[-0.04em] text-balance sm:text-5xl">
+          Deadlines, in order.
+        </h1>
+        <p className="mt-3 max-w-prose text-muted-foreground">
+          {showOverdue
+            ? 'A local ledger of what is overdue, what is due today, and what is coming. Nothing leaves this machine.'
+            : 'A local ledger of what is due today and what is coming. Overdue deadlines are summarized in the ledger tab; nothing leaves this machine.'}
+        </p>
+      </div>
+      <Button type="button" size="lg" onClick={onCreate} className="w-fit">
+        <Plus aria-hidden="true" />
+        New deadline
+      </Button>
+    </header>
   )
 }

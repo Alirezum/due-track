@@ -68,6 +68,11 @@ function makeList(overdue: DueItem[], today: DueItem[], upcoming: DueItem[]): It
 }
 
 const ITEMS = makeList([OVERDUE], [TODAY], [UPCOMING])
+const UPCOMING_ITEMS = makeList([], [TODAY], [UPCOMING])
+
+function listFor(url: string): ItemListResponse {
+  return url.includes('scope=upcoming') ? UPCOMING_ITEMS : ITEMS
+}
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -134,9 +139,9 @@ afterEach(() => {
 describe('keyboard shortcuts', () => {
   it('opens quick-add with N and focuses the title', async () => {
     const user = userEvent.setup()
-    mockFetch(() => jsonResponse(ITEMS))
+    mockFetch((url) => jsonResponse(listFor(url)))
     renderDashboard()
-    await screen.findByText('Overdue invoice')
+    await screen.findByText('Today call')
 
     await user.keyboard('n')
 
@@ -146,9 +151,9 @@ describe('keyboard shortcuts', () => {
 
   it('focuses the dashboard search with /', async () => {
     const user = userEvent.setup()
-    mockFetch(() => jsonResponse(ITEMS))
+    mockFetch((url) => jsonResponse(listFor(url)))
     renderDashboard()
-    await screen.findByText('Overdue invoice')
+    await screen.findByText('Today call')
 
     await user.keyboard('/')
 
@@ -157,73 +162,72 @@ describe('keyboard shortcuts', () => {
 
   it('moves the active item with J/K and exposes a visible active state', async () => {
     const user = userEvent.setup()
-    mockFetch(() => jsonResponse(ITEMS))
+    mockFetch((url) => jsonResponse(listFor(url)))
     renderDashboard()
-    await screen.findByText('Overdue invoice')
-
-    await user.keyboard('j')
-    await waitFor(() => expect(articleFor('Overdue invoice')).toHaveFocus())
-    expect(articleFor('Overdue invoice')).toHaveAttribute('data-active', 'true')
-    expect(articleFor('Overdue invoice')).toHaveAttribute('aria-current', 'true')
+    await screen.findByText('Today call')
 
     await user.keyboard('j')
     await waitFor(() => expect(articleFor('Today call')).toHaveFocus())
     expect(articleFor('Today call')).toHaveAttribute('data-active', 'true')
-    expect(articleFor('Overdue invoice')).not.toHaveAttribute('data-active', 'true')
+    expect(articleFor('Today call')).toHaveAttribute('aria-current', 'true')
+
+    await user.keyboard('j')
+    await waitFor(() => expect(articleFor('Upcoming rent')).toHaveFocus())
+    expect(articleFor('Upcoming rent')).toHaveAttribute('data-active', 'true')
+    expect(articleFor('Today call')).not.toHaveAttribute('data-active', 'true')
 
     await user.keyboard('k')
-    await waitFor(() => expect(articleFor('Overdue invoice')).toHaveFocus())
-    expect(articleFor('Overdue invoice')).toHaveAttribute('data-active', 'true')
+    await waitFor(() => expect(articleFor('Today call')).toHaveFocus())
+    expect(articleFor('Today call')).toHaveAttribute('data-active', 'true')
   })
 
   it('opens the active item details with Enter', async () => {
     const user = userEvent.setup()
-    mockFetch(() => jsonResponse(ITEMS))
+    mockFetch((url) => jsonResponse(listFor(url)))
     renderDashboard()
-    await screen.findByText('Overdue invoice')
+    await screen.findByText('Today call')
 
     await user.keyboard('j')
-    await waitFor(() => expect(articleFor('Overdue invoice')).toHaveFocus())
+    await waitFor(() => expect(articleFor('Today call')).toHaveFocus())
 
     await user.keyboard('{Enter}')
 
     expect(await screen.findByRole('dialog', { name: 'Edit deadline' })).toBeInTheDocument()
-    expect(screen.getByLabelText('Title')).toHaveValue('Overdue invoice')
+    expect(screen.getByLabelText('Title')).toHaveValue('Today call')
   })
 
   it('completes the active item with C', async () => {
     const user = userEvent.setup()
     let completed = false
     const fetchMock = mockFetch((url, init) => {
-      if (url === '/api/items/1/complete' && init.method === 'POST') {
+      if (url === '/api/items/2/complete' && init.method === 'POST') {
         completed = true
-        return jsonResponse(completion(OVERDUE))
+        return jsonResponse(completion(TODAY))
       }
-      return jsonResponse(completed ? makeList([], [TODAY], [UPCOMING]) : ITEMS)
+      return jsonResponse(completed ? makeList([OVERDUE], [], [UPCOMING]) : listFor(url))
     })
     renderDashboard()
-    await screen.findByText('Overdue invoice')
+    await screen.findByText('Today call')
 
     await user.keyboard('j')
-    await waitFor(() => expect(articleFor('Overdue invoice')).toHaveFocus())
+    await waitFor(() => expect(articleFor('Today call')).toHaveFocus())
 
     await user.keyboard('c')
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith('/api/items/1/complete', expect.anything())
+      expect(fetchMock).toHaveBeenCalledWith('/api/items/2/complete', expect.anything())
     })
     await waitFor(() => {
-      expect(screen.queryByText('Overdue invoice')).not.toBeInTheDocument()
+      expect(screen.queryByText('Today call')).not.toBeInTheDocument()
     })
   })
 
   it('edits the active item with E', async () => {
     const user = userEvent.setup()
-    mockFetch(() => jsonResponse(ITEMS))
+    mockFetch((url) => jsonResponse(listFor(url)))
     renderDashboard()
-    await screen.findByText('Overdue invoice')
+    await screen.findByText('Today call')
 
-    await user.keyboard('j')
     await user.keyboard('j')
     await waitFor(() => expect(articleFor('Today call')).toHaveFocus())
 
@@ -237,42 +241,42 @@ describe('keyboard shortcuts', () => {
     const user = userEvent.setup()
     let deleted = false
     const fetchMock = mockFetch((url, init) => {
-      if (url === '/api/items/1' && init.method === 'DELETE') {
+      if (url === '/api/items/2' && init.method === 'DELETE') {
         deleted = true
         return new Response(null, { status: 204 })
       }
-      return jsonResponse(deleted ? makeList([], [TODAY], [UPCOMING]) : ITEMS)
+      return jsonResponse(deleted ? makeList([OVERDUE], [], [UPCOMING]) : listFor(url))
     })
     renderDashboard()
-    await screen.findByText('Overdue invoice')
+    await screen.findByText('Today call')
 
     await user.keyboard('j')
-    await waitFor(() => expect(articleFor('Overdue invoice')).toHaveFocus())
+    await waitFor(() => expect(articleFor('Today call')).toHaveFocus())
 
     await user.keyboard('{Delete}')
 
     const dialog = await screen.findByRole('alertdialog')
     expect(within(dialog).getByText('Delete deadline?')).toBeInTheDocument()
-    expect(within(dialog).getByText(/Overdue invoice/)).toBeInTheDocument()
+    expect(within(dialog).getByText(/Today call/)).toBeInTheDocument()
 
     await user.click(within(dialog).getByRole('button', { name: 'Delete deadline' }))
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
-        '/api/items/1',
+        '/api/items/2',
         expect.objectContaining({ method: 'DELETE' }),
       )
     })
     await waitFor(() => {
-      expect(screen.queryByText('Overdue invoice')).not.toBeInTheDocument()
+      expect(screen.queryByText('Today call')).not.toBeInTheDocument()
     })
   })
 
   it('opens shortcut help with ? and closes overlays with Esc', async () => {
     const user = userEvent.setup()
-    mockFetch(() => jsonResponse(ITEMS))
+    mockFetch((url) => jsonResponse(listFor(url)))
     renderDashboard()
-    await screen.findByText('Overdue invoice')
+    await screen.findByText('Today call')
 
     await user.keyboard('?')
 

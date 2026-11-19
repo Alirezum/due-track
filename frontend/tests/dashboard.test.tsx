@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
 import { MemoryRouter } from 'react-router-dom'
@@ -32,53 +32,56 @@ function makeItem(overrides: Partial<DueItem> & Pick<DueItem, 'id' | 'title'>): 
   }
 }
 
-const ITEMS: ItemListResponse = {
-  buckets: {
-    overdue: [
-      makeItem({
-        id: 1,
-        title: 'Tax return',
-        category: 'Bills',
-        priority: 'critical',
-        notes: 'Upload the receipts',
-        due_local_date: '2026-11-01',
-        due_at_utc: '2026-11-02T04:59:59.999999Z',
-        is_date_only: true,
-        due_local_time: null,
-      }),
-    ],
-    due_today: [
-      makeItem({
-        id: 2,
-        title: 'Call the plumber',
-        due_at_utc: '2026-11-05T17:00:00Z',
-        due_local_time: '12:00',
-      }),
-    ],
-    upcoming: [
-      makeItem({
-        id: 3,
-        title: 'Rent',
-        category: 'Bills',
-        amount_cents: 120000,
-        recurrence_freq: 'monthly',
-        recurrence_interval: 1,
-        recurrence_anchor_day: 5,
-        is_recurring: true,
-        due_local_date: '2026-11-06',
-        due_at_utc: '2026-11-07T04:59:59.999999Z',
-        is_date_only: true,
-        due_local_time: null,
-        priority: 'high',
-      }),
-    ],
-    later: [],
-  },
-  summary: {
-    overdue_count: 1,
-    due_today_count: 1,
-    upcoming_total_cents: 120000,
-  },
+const OVERDUE = makeItem({
+  id: 1,
+  title: 'Tax return',
+  category: 'Bills',
+  priority: 'critical',
+  notes: 'Upload the receipts',
+  due_local_date: '2026-11-01',
+  due_at_utc: '2026-11-02T04:59:59.999999Z',
+  is_date_only: true,
+  due_local_time: null,
+})
+
+const TODAY = makeItem({
+  id: 2,
+  title: 'Call the plumber',
+  due_at_utc: '2026-11-05T17:00:00Z',
+  due_local_time: '12:00',
+})
+
+const RENT = makeItem({
+  id: 3,
+  title: 'Rent',
+  category: 'Bills',
+  amount_cents: 120000,
+  recurrence_freq: 'monthly',
+  recurrence_interval: 1,
+  recurrence_anchor_day: 5,
+  is_recurring: true,
+  due_local_date: '2026-11-06',
+  due_at_utc: '2026-11-07T04:59:59.999999Z',
+  is_date_only: true,
+  due_local_time: null,
+  priority: 'high',
+})
+
+const ALL_ITEMS: ItemListResponse = {
+  buckets: { overdue: [OVERDUE], due_today: [TODAY], upcoming: [RENT], later: [] },
+  summary: { overdue_count: 1, due_today_count: 1, upcoming_total_cents: 120000 },
+  currency_code: 'USD',
+  timezone: 'America/New_York',
+}
+
+const UPCOMING_ITEMS: ItemListResponse = {
+  ...ALL_ITEMS,
+  buckets: { ...ALL_ITEMS.buckets, overdue: [] },
+}
+
+const EMPTY: ItemListResponse = {
+  buckets: { overdue: [], due_today: [], upcoming: [], later: [] },
+  summary: { overdue_count: 0, due_today_count: 0, upcoming_total_cents: 0 },
   currency_code: 'USD',
   timezone: 'America/New_York',
 }
@@ -88,6 +91,14 @@ function jsonResponse(body: unknown, status = 200): Response {
     status,
     headers: { 'content-type': 'application/json' },
   })
+}
+
+function itemsFor(
+  url: string,
+  all: ItemListResponse = ALL_ITEMS,
+  upcoming: ItemListResponse = UPCOMING_ITEMS,
+): Response {
+  return jsonResponse(url.includes('scope=upcoming') ? upcoming : all)
 }
 
 function renderDashboard() {
@@ -106,16 +117,26 @@ function renderDashboard() {
   return render(<DashboardPage />, { wrapper: Wrapper })
 }
 
-function mockFetch(
-  handler: (url: string, init: RequestInit) => Response | Promise<Response> = () =>
-    jsonResponse(ITEMS),
-) {
+type Handler = (url: string, init: RequestInit) => Response | Promise<Response>
+
+function mockFetch(handler?: Handler) {
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init: RequestInit = {}) => {
     const url = typeof input === 'string' ? input : input.toString()
-    return handler(url, init)
+    return handler ? handler(url, init) : itemsFor(url)
   })
   vi.stubGlobal('fetch', fetchMock)
   return fetchMock
+}
+
+function summaryValue(name: string): string | null {
+  const summary = screen.getByRole('region', { name: 'Dashboard summary' })
+  return summary.querySelector(`[data-summary="${name}"] strong`)?.textContent ?? null
+}
+
+function listRequests(fetchMock: ReturnType<typeof mockFetch>): string[] {
+  return fetchMock.mock.calls
+    .map(([input]) => (typeof input === 'string' ? input : String(input)))
+    .filter((url) => url.startsWith('/api/items') && !url.match(/\/api\/items\/\d/))
 }
 
 beforeEach(() => {
@@ -123,30 +144,219 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  vi.useRealTimers()
   vi.unstubAllGlobals()
 })
 
 describe('DashboardPage', () => {
-  it('renders the four buckets, summary values, and item details', async () => {
+  it('defaults to upcoming scope and keeps money out of the summary', async () => {
+    const fetchMock = mockFetch()
     renderDashboard()
+
+    expect(await screen.findByText('Call the plumber')).toBeInTheDocument()
+    expect(screen.getByText('Rent')).toBeInTheDocument()
+    expect(screen.queryByText('Tax return')).not.toBeInTheDocument()
+    expect(screen.queryByText('Upcoming total')).not.toBeInTheDocument()
+    expect(screen.getByText(/Overdue deadlines are summarized/)).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Upcoming deadlines' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Overdue' })).not.toBeInTheDocument()
+
+    expect(summaryValue('Next 7 days')).toBe('1')
+    expect(summaryValue('Due today')).toBe('1')
+    expect(summaryValue('Overdue')).toBe('1')
+
+    const upcomingCalls = listRequests(fetchMock).filter((url) => url.includes('scope=upcoming'))
+    expect(upcomingCalls.length).toBeGreaterThan(0)
+  })
+
+  it('reveals and hides overdue deadlines with a focus handoff', async () => {
+    const user = userEvent.setup()
+    renderDashboard()
+
+    await screen.findByText('Call the plumber')
+    const show = screen.getByRole('button', { name: 'Show 1 overdue deadline' })
+    expect(show).toHaveAttribute('aria-expanded', 'false')
+
+    await user.click(show)
 
     expect(await screen.findByText('Tax return')).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Overdue' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Due today' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Upcoming' })).toBeInTheDocument()
-    expect(screen.getByRole('heading', { name: 'Later' })).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Deadlines including overdue' })).toBeInTheDocument()
+    const hide = screen.getByRole('button', { name: 'Hide 1 overdue deadline' })
+    expect(hide).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByText(/A local ledger of what is overdue/)).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByRole('article', { name: 'Tax return' })).toHaveFocus())
 
-    const summary = screen.getByRole('region', { name: 'Dashboard summary' })
-    expect(within(summary).getByText('Overdue')).toBeInTheDocument()
-    expect(within(summary).getByText('Due today')).toBeInTheDocument()
-    expect(within(summary).getByText('$1,200.00')).toBeInTheDocument()
+    await user.click(hide)
 
-    expect(screen.getByText('Call the plumber')).toBeInTheDocument()
-    expect(screen.getByText('Rent')).toBeInTheDocument()
-    expect(screen.getByText('Nothing later')).toBeInTheDocument()
-    expect(screen.getByText('Nov 1, 2026')).toBeInTheDocument()
-    expect(screen.getByText('Repeats monthly')).toBeInTheDocument()
-    expect(screen.getAllByText('Bills')).toHaveLength(2)
+    await waitFor(() => expect(screen.queryByText('Tax return')).not.toBeInTheDocument())
+    expect(screen.getByRole('region', { name: 'Upcoming deadlines' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Show 1 overdue deadline' })).toHaveFocus()
+  })
+
+  it('shows the all-overdue state and reveals the overdue bucket', async () => {
+    const user = userEvent.setup()
+    const overdueOnly: ItemListResponse = {
+      ...EMPTY,
+      buckets: { ...EMPTY.buckets, overdue: [OVERDUE] },
+      summary: { ...EMPTY.summary, overdue_count: 1 },
+    }
+    mockFetch((url) => itemsFor(url, overdueOnly, { ...overdueOnly, buckets: { ...overdueOnly.buckets, overdue: [] } }))
+    renderDashboard()
+
+    expect(await screen.findByText('Nothing is upcoming.')).toBeInTheDocument()
+    expect(screen.getByText('1 deadline is overdue.')).toBeInTheDocument()
+    const upcomingRegion = screen.getByRole('region', { name: 'Upcoming deadlines' })
+    expect(within(upcomingRegion).getByRole('button', { name: 'New deadline' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Show 1 overdue deadline' }))
+
+    expect(await screen.findByText('Tax return')).toBeInTheDocument()
+    expect(screen.getByText('Nothing is upcoming. 1 deadline is overdue.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Hide 1 overdue deadline' })).toBeInTheDocument()
+  })
+
+  it('offers show-overdue and clear-filters when only overdue matches the filters', async () => {
+    const user = userEvent.setup()
+    const filteredOverdue = { ...ALL_ITEMS, buckets: { ...ALL_ITEMS.buckets, due_today: [], upcoming: [], later: [] } }
+    const filteredUpcoming = { ...EMPTY, summary: { ...EMPTY.summary, overdue_count: 1 } }
+    mockFetch((url) => {
+      if (url.includes('category=Bills')) {
+        return jsonResponse(url.includes('scope=upcoming') ? filteredUpcoming : filteredOverdue)
+      }
+      return itemsFor(url)
+    })
+    renderDashboard()
+    await screen.findByText('Call the plumber')
+
+    await user.type(screen.getByLabelText('Category'), 'Bills')
+
+    expect(await screen.findByText('No upcoming deadlines match these filters.')).toBeInTheDocument()
+    expect(screen.getByText('1 overdue deadline matches.')).toBeInTheDocument()
+    const upcomingRegion = screen.getByRole('region', { name: 'Upcoming deadlines' })
+    expect(within(upcomingRegion).getByRole('button', { name: 'Clear filters' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Show 1 overdue deadline' }))
+    expect(await screen.findByText('Tax return')).toBeInTheDocument()
+  })
+
+  it('shows the empty-ledger state when nothing is stored', async () => {
+    mockFetch(() => itemsFor('/api/items', EMPTY, EMPTY))
+    renderDashboard()
+
+    expect(await screen.findByText('Nothing on the ledger yet.')).toBeInTheDocument()
+    expect(screen.getByText(/Add your first deadline/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Show .* overdue/ })).not.toBeInTheDocument()
+  })
+
+  it('keeps overdue-only categories in the category source', async () => {
+    const healthOverdue = makeItem({
+      id: 8,
+      title: 'Health check',
+      category: 'Health',
+      due_at_utc: '2026-11-02T04:59:59.999999Z',
+      due_local_date: '2026-11-01',
+      is_date_only: true,
+      due_local_time: null,
+    })
+    const all = {
+      ...ALL_ITEMS,
+      buckets: { ...ALL_ITEMS.buckets, overdue: [OVERDUE, healthOverdue] },
+      summary: { ...ALL_ITEMS.summary, overdue_count: 2 },
+    }
+    mockFetch((url) => itemsFor(url, all, UPCOMING_ITEMS))
+    const { container } = renderDashboard()
+    await screen.findByText('Call the plumber')
+
+    const listId = screen.getByLabelText('Category').getAttribute('list')
+    const options = Array.from(container.querySelectorAll(`#${listId} option`)).map((option) =>
+      option.getAttribute('value'),
+    )
+    expect(options).toEqual(['Bills', 'Health'])
+  })
+
+  it('shows a hidden-overdue notice after creating an overdue deadline', async () => {
+    const user = userEvent.setup()
+    const created = makeItem({
+      id: 9,
+      title: 'Renew passport',
+      due_at_utc: '2026-10-01T14:00:00Z',
+      due_local_date: '2026-10-01',
+    })
+    let posted = false
+    mockFetch((url, init) => {
+      if (url === '/api/items' && init.method === 'POST') {
+        posted = true
+        return jsonResponse(created, 201)
+      }
+      if (posted) {
+        const all = {
+          ...ALL_ITEMS,
+          buckets: { ...ALL_ITEMS.buckets, overdue: [...ALL_ITEMS.buckets.overdue, created] },
+          summary: { ...ALL_ITEMS.summary, overdue_count: 2 },
+        }
+        return itemsFor(url, all, { ...UPCOMING_ITEMS, summary: { ...UPCOMING_ITEMS.summary, overdue_count: 2 } })
+      }
+      return itemsFor(url)
+    })
+    renderDashboard()
+    await screen.findByText('Call the plumber')
+    await user.click(screen.getByRole('button', { name: 'New deadline' }))
+
+    const dialog = await screen.findByRole('dialog')
+    await user.type(within(dialog).getByLabelText('Title'), 'Renew passport')
+    await user.clear(within(dialog).getByLabelText('Date'))
+    await user.type(within(dialog).getByLabelText('Date'), '2026-10-01')
+    await user.click(within(dialog).getByRole('button', { name: 'Create deadline' }))
+
+    expect(
+      await screen.findByText(/Saved “Renew passport”. It is overdue, so it is hidden by the upcoming focus./),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Show 2 overdue deadlines' })).toBeInTheDocument()
+  })
+
+  it('shows a hidden-overdue notice after editing an upcoming deadline into the past', async () => {
+    const user = userEvent.setup()
+    const overdueRent = makeItem({
+      ...RENT,
+      due_at_utc: '2026-10-01T14:00:00Z',
+      due_local_date: '2026-10-01',
+    })
+    let patched = false
+    mockFetch((url, init) => {
+      if (url === '/api/items/3' && init.method === 'PATCH') {
+        patched = true
+        return jsonResponse(overdueRent)
+      }
+      if (patched) {
+        const all = {
+          ...ALL_ITEMS,
+          buckets: {
+            overdue: [...ALL_ITEMS.buckets.overdue, overdueRent],
+            due_today: ALL_ITEMS.buckets.due_today,
+            upcoming: [],
+            later: [],
+          },
+          summary: { ...ALL_ITEMS.summary, overdue_count: 2 },
+        }
+        return itemsFor(url, all, {
+          ...EMPTY,
+          summary: { ...EMPTY.summary, overdue_count: 2 },
+        })
+      }
+      return itemsFor(url)
+    })
+    renderDashboard()
+    await screen.findByText('Rent')
+
+    await user.click(screen.getByRole('button', { name: 'Edit Rent' }))
+    const dialog = await screen.findByRole('dialog')
+    await user.clear(within(dialog).getByLabelText('Date'))
+    await user.type(within(dialog).getByLabelText('Date'), '2026-10-01')
+    await user.click(within(dialog).getByRole('button', { name: 'Save changes' }))
+
+    expect(
+      await screen.findByText(/Saved “Rent”. It is overdue, so it is hidden by the upcoming focus./),
+    ).toBeInTheDocument()
   })
 
   it('creates an item from the form and posts the contract payload', async () => {
@@ -155,11 +365,11 @@ describe('DashboardPage', () => {
       if (url === '/api/items' && init.method === 'POST') {
         return jsonResponse(makeItem({ id: 9, title: 'New deadline' }), 201)
       }
-      return jsonResponse(ITEMS)
+      return itemsFor(url)
     })
     renderDashboard()
 
-    await screen.findByText('Tax return')
+    await screen.findByText('Call the plumber')
     await user.click(screen.getByRole('button', { name: 'New deadline' }))
 
     const dialog = await screen.findByRole('dialog')
@@ -188,28 +398,28 @@ describe('DashboardPage', () => {
   it('edits an item through the same form and patches the item', async () => {
     const user = userEvent.setup()
     const fetchMock = mockFetch((url, init) => {
-      if (url === '/api/items/1' && init.method === 'PATCH') {
-        return jsonResponse(makeItem({ id: 1, title: 'Tax return filed' }))
+      if (url === '/api/items/3' && init.method === 'PATCH') {
+        return jsonResponse(makeItem({ ...RENT, title: 'Rent paid' }))
       }
-      return jsonResponse(ITEMS)
+      return itemsFor(url)
     })
     renderDashboard()
 
-    await screen.findByText('Tax return')
-    await user.click(screen.getByRole('button', { name: 'Edit Tax return' }))
+    await screen.findByText('Rent')
+    await user.click(screen.getByRole('button', { name: 'Edit Rent' }))
 
     const dialog = await screen.findByRole('dialog')
     const title = within(dialog).getByLabelText('Title')
     await user.clear(title)
-    await user.type(title, 'Tax return filed')
+    await user.type(title, 'Rent paid')
     await user.click(within(dialog).getByRole('button', { name: 'Save changes' }))
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
-        '/api/items/1',
+        '/api/items/3',
         expect.objectContaining({
           method: 'PATCH',
-          body: expect.stringContaining('"title":"Tax return filed"'),
+          body: expect.stringContaining('"title":"Rent paid"'),
         }),
       )
     })
@@ -218,20 +428,20 @@ describe('DashboardPage', () => {
   it('requires confirmation before deleting an item', async () => {
     const user = userEvent.setup()
     const fetchMock = mockFetch((url, init) => {
-      if (url === '/api/items/1' && init.method === 'DELETE') {
+      if (url === '/api/items/3' && init.method === 'DELETE') {
         return new Response(null, { status: 204 })
       }
-      return jsonResponse(ITEMS)
+      return itemsFor(url)
     })
     renderDashboard()
 
-    await screen.findByText('Tax return')
-    await user.click(screen.getByRole('button', { name: 'Delete Tax return' }))
+    await screen.findByText('Rent')
+    await user.click(screen.getByRole('button', { name: 'Delete Rent' }))
 
     const dialog = await screen.findByRole('alertdialog')
     expect(within(dialog).getByText('Delete deadline?')).toBeInTheDocument()
     expect(fetchMock).not.toHaveBeenCalledWith(
-      '/api/items/1',
+      '/api/items/3',
       expect.objectContaining({ method: 'DELETE' }),
     )
 
@@ -239,7 +449,7 @@ describe('DashboardPage', () => {
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
-        '/api/items/1',
+        '/api/items/3',
         expect.objectContaining({ method: 'DELETE' }),
       )
     })
@@ -255,19 +465,17 @@ describe('DashboardPage', () => {
     renderDashboard()
 
     const badges = await screen.findAllByText('Bills')
+    expect(badges).toHaveLength(1)
     expect(badges[0]).toHaveAttribute('data-category-tone', '3')
-    expect(badges[1]).toHaveAttribute('data-category-tone', '3')
   })
 
   it('renders notes as plain text with preserved whitespace', async () => {
     const malicious = '<script>window.__dueTrackPwned = true</script>\nSecond line'
-    mockFetch(() =>
-      jsonResponse({
-        ...ITEMS,
-        buckets: {
-          ...ITEMS.buckets,
-          overdue: [makeItem({ id: 1, title: 'Tax return', notes: malicious })],
-        },
+    const notesItem = makeItem({ ...RENT, notes: malicious })
+    mockFetch((url) =>
+      itemsFor(url, { ...ALL_ITEMS, buckets: { ...ALL_ITEMS.buckets, upcoming: [notesItem] } }, {
+        ...UPCOMING_ITEMS,
+        buckets: { ...UPCOMING_ITEMS.buckets, upcoming: [notesItem] },
       }),
     )
     renderDashboard()
@@ -275,5 +483,116 @@ describe('DashboardPage', () => {
     const notes = await screen.findByText(/<script>window\.__dueTrackPwned = true<\/script>/)
     expect(notes).toHaveClass('whitespace-pre-wrap')
     expect((window as unknown as { __dueTrackPwned?: boolean }).__dueTrackPwned).toBeUndefined()
+  })
+
+  it('refetches every 55 seconds and on window focus', async () => {
+    vi.useFakeTimers()
+    const fetchMock = mockFetch()
+    renderDashboard()
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(screen.getByText('Call the plumber')).toBeInTheDocument()
+
+    const upcomingCalls = () =>
+      listRequests(fetchMock).filter((url) => url.includes('scope=upcoming')).length
+    const beforeInterval = upcomingCalls()
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(55_000)
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(upcomingCalls()).toBeGreaterThan(beforeInterval)
+
+    const beforeFocus = upcomingCalls()
+    await act(async () => {
+      window.dispatchEvent(new Event('visibilitychange'))
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(upcomingCalls()).toBeGreaterThan(beforeFocus)
+  })
+
+  it('removes a deadline that crosses now and increments the overdue count within 60 seconds', async () => {
+    vi.useFakeTimers()
+    const crossing = makeItem({
+      id: 12,
+      title: 'Crossing deadline',
+      due_at_utc: '2026-11-05T12:00:30Z',
+      due_local_time: '07:00',
+    })
+    let crossed = false
+    mockFetch((url) => {
+      if (!url.includes('scope=upcoming')) {
+        return itemsFor(url)
+      }
+      return crossed
+        ? jsonResponse({ ...EMPTY, summary: { ...EMPTY.summary, overdue_count: 1 } })
+        : jsonResponse({
+            ...EMPTY,
+            buckets: { ...EMPTY.buckets, upcoming: [crossing] },
+            summary: { ...EMPTY.summary, due_today_count: 0 },
+          })
+    })
+    renderDashboard()
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0)
+    })
+    expect(screen.getByText('Crossing deadline')).toBeInTheDocument()
+    expect(summaryValue('Overdue')).toBe('0')
+
+    crossed = true
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(55_000)
+      await vi.advanceTimersByTimeAsync(1)
+    })
+
+    expect(screen.queryByText('Crossing deadline')).not.toBeInTheDocument()
+    expect(summaryValue('Overdue')).toBe('1')
+  })
+
+  it('shows the no-data error state', async () => {
+    mockFetch(() => jsonResponse({ detail: 'offline' }, 500))
+    renderDashboard()
+
+    expect(await screen.findByText('The dashboard could not be read.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument()
+  })
+
+  it('keeps stale cards and shows a retry strip when a refetch fails', async () => {
+    let fail = false
+    mockFetch((url) => (fail ? jsonResponse({ detail: 'offline' }, 500) : itemsFor(url)))
+    renderDashboard()
+    await screen.findByText('Call the plumber')
+
+    fail = true
+    await act(async () => {
+      window.dispatchEvent(new Event('visibilitychange'))
+      await Promise.resolve()
+    })
+
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('The dashboard could not be updated.')
+    expect(screen.getByText('Call the plumber')).toBeInTheDocument()
+
+    fail = false
+    await userEvent.setup().click(within(alert).getByRole('button', { name: 'Retry' }))
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument())
+  })
+
+  it('performs no writes when revealing or hiding overdue deadlines', async () => {
+    const user = userEvent.setup()
+    const fetchMock = mockFetch()
+    renderDashboard()
+    await screen.findByText('Call the plumber')
+
+    await user.click(screen.getByRole('button', { name: 'Show 1 overdue deadline' }))
+    await screen.findByText('Tax return')
+    await user.click(screen.getByRole('button', { name: 'Hide 1 overdue deadline' }))
+    await waitFor(() => expect(screen.queryByText('Tax return')).not.toBeInTheDocument())
+
+    const writes = fetchMock.mock.calls.filter(([, init]) => {
+      const method = init?.method ?? 'GET'
+      return method !== 'GET' && method !== 'HEAD'
+    })
+    expect(writes).toHaveLength(0)
   })
 })

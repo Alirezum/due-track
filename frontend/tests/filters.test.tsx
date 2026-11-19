@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
 import { MemoryRouter } from 'react-router-dom'
@@ -165,6 +165,11 @@ function findQuery(
   return candidates.find(predicate)
 }
 
+function summaryValue(name: string): string | null {
+  const summary = screen.getByRole('region', { name: 'Dashboard summary' })
+  return summary.querySelector(`[data-summary="${name}"] strong`)?.textContent ?? null
+}
+
 beforeEach(() => {
   mockFetch()
 })
@@ -197,7 +202,7 @@ describe('filtersToQueryString', () => {
 describe('Dashboard filters', () => {
   it('renders every filter control and offers known categories', async () => {
     const { container } = renderDashboard()
-    await screen.findByText('Tax return')
+    await screen.findByText('Call the plumber')
 
     expect(screen.getByLabelText('Category')).toBeInTheDocument()
     expect(screen.getByLabelText('Priority')).toBeInTheDocument()
@@ -218,7 +223,7 @@ describe('Dashboard filters', () => {
     const user = userEvent.setup()
     const fetchMock = mockFetch()
     renderDashboard()
-    await screen.findByText('Tax return')
+    await screen.findByText('Call the plumber')
 
     await user.type(screen.getByLabelText('Category'), 'Bills')
 
@@ -231,7 +236,7 @@ describe('Dashboard filters', () => {
     const user = userEvent.setup()
     const fetchMock = mockFetch()
     renderDashboard()
-    await screen.findByText('Tax return')
+    await screen.findByText('Call the plumber')
 
     await user.selectOptions(screen.getByLabelText('Priority'), 'high')
 
@@ -244,7 +249,7 @@ describe('Dashboard filters', () => {
     const user = userEvent.setup()
     const fetchMock = mockFetch()
     renderDashboard()
-    await screen.findByText('Tax return')
+    await screen.findByText('Call the plumber')
 
     await user.selectOptions(screen.getByLabelText('Repeats'), 'true')
 
@@ -256,7 +261,7 @@ describe('Dashboard filters', () => {
   it('debounces live search and sends the trimmed term', async () => {
     const fetchMock = mockFetch()
     renderDashboard()
-    await screen.findByText('Tax return')
+    await screen.findByText('Call the plumber')
 
     fireEvent.change(screen.getByLabelText('Search'), { target: { value: '  rent  ' } })
 
@@ -274,7 +279,7 @@ describe('Dashboard filters', () => {
     const user = userEvent.setup()
     const fetchMock = mockFetch()
     renderDashboard()
-    await screen.findByText('Tax return')
+    await screen.findByText('Call the plumber')
 
     await user.type(screen.getByLabelText('Category'), 'Bills')
     await user.selectOptions(screen.getByLabelText('Priority'), 'high')
@@ -302,7 +307,7 @@ describe('Dashboard filters', () => {
     const user = userEvent.setup()
     const fetchMock = mockFetch()
     renderDashboard()
-    await screen.findByText('Tax return')
+    await screen.findByText('Call the plumber')
 
     await user.selectOptions(screen.getByLabelText('Priority'), 'high')
     await waitFor(() => {
@@ -312,7 +317,7 @@ describe('Dashboard filters', () => {
     await user.click(screen.getByRole('button', { name: 'Clear filters' }))
 
     await waitFor(() => {
-      expect(itemRequests(fetchMock).at(-1)).toBe('/api/items')
+      expect(itemRequests(fetchMock).at(-1)).toBe('/api/items?scope=upcoming')
     })
     expect(screen.getByLabelText('Category')).toHaveValue('')
     expect(screen.getByLabelText('Priority')).toHaveValue('')
@@ -324,22 +329,25 @@ describe('Dashboard filters', () => {
     const user = userEvent.setup()
     mockFetch((url) => (url.includes('category=Bills') ? jsonResponse(BILLS_ONLY) : jsonResponse(ITEMS)))
     renderDashboard()
-    const summary = await screen.findByRole('region', { name: 'Dashboard summary' })
-    await waitFor(() => expect(within(summary).getByText('$1,200.00')).toBeInTheDocument())
+    await screen.findByText('Call the plumber')
+    expect(summaryValue('Due today')).toBe('1')
+    expect(summaryValue('Overdue')).toBe('1')
 
     await user.type(screen.getByLabelText('Category'), 'Bills')
 
-    await waitFor(() => expect(within(summary).getByText('$50.00')).toBeInTheDocument())
+    await waitFor(() => expect(summaryValue('Due today')).toBe('0'))
+    expect(summaryValue('Overdue')).toBe('0')
+    expect(summaryValue('Next 7 days')).toBe('1')
   })
 
   it('shows a no-results message when filters match nothing', async () => {
-    mockFetch((url) => (url.includes('?') ? jsonResponse(NO_MATCHES) : jsonResponse(ITEMS)))
+    mockFetch((url) => (url.includes('q=zzz') ? jsonResponse(NO_MATCHES) : jsonResponse(ITEMS)))
     renderDashboard()
-    await screen.findByText('Tax return')
+    await screen.findByText('Call the plumber')
 
     fireEvent.change(screen.getByLabelText('Search'), { target: { value: 'zzz' } })
 
     expect(await screen.findByText('No deadlines match these filters.')).toBeInTheDocument()
-    expect(screen.queryByText('Tax return')).not.toBeInTheDocument()
+    expect(screen.queryByText('Call the plumber')).not.toBeInTheDocument()
   })
 })
