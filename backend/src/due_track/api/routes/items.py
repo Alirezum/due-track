@@ -4,12 +4,13 @@ import json
 import sqlite3
 from dataclasses import asdict
 from datetime import date, datetime
-from typing import Annotated, Any, cast
+from typing import Any, cast
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, HTTPException, Query, Response
+from fastapi import APIRouter, HTTPException, Response
 
 from due_track.api.deps import DatabaseDep, NowDep, SettingsDep
+from due_track.api.filters import ItemFiltersDep
 from due_track.api.schemas import (
     AnchorMode,
     Buckets,
@@ -20,10 +21,10 @@ from due_track.api.schemas import (
     ItemCreate,
     ItemListResponse,
     ItemUpdate,
-    Priority,
     RecurrenceFrequency,
     validate_recurrence_policy,
 )
+from due_track.api.serializers import record_to_due_item
 from due_track.api.time import (
     end_of_local_day_to_utc,
     local_to_utc,
@@ -78,36 +79,6 @@ def _validation_error(message: str) -> HTTPException:
 
 def _not_found(item_id: int) -> HTTPException:
     return HTTPException(status_code=404, detail=f"Item {item_id} not found")
-
-
-def _record_to_due_item(record: ItemRecord, tz: ZoneInfo) -> DueItem:
-    local_due = utc_to_local(record.due_at_utc, tz)
-    return DueItem(
-        id=record.id,
-        title=record.title,
-        notes=record.notes,
-        due_at_utc=record.due_at_utc,
-        is_date_only=record.is_date_only,
-        due_local_date=local_due.date(),
-        due_local_time=None if record.is_date_only else local_due.strftime("%H:%M"),
-        category=record.category,
-        priority=cast(Any, record.priority),
-        amount_cents=record.amount_cents,
-        recurrence_freq=cast(Any, record.recurrence_freq),
-        recurrence_interval=record.recurrence_interval,
-        recurrence_anchor_mode=cast(Any, record.recurrence_anchor_mode),
-        recurrence_anchor_day=record.recurrence_anchor_day,
-        recurrence_end_date=(
-            recurrence_end_utc_to_local_date(record.recurrence_end_at_utc, tz)
-            if record.recurrence_end_at_utc is not None
-            else None
-        ),
-        recurrence_remaining_count=record.recurrence_remaining_count,
-        status=cast(Any, record.status),
-        is_recurring=record.recurrence_freq != "none",
-        created_at_utc=record.created_at_utc,
-        updated_at_utc=record.updated_at_utc,
-    )
 
 
 def _derive_anchor_day(
@@ -182,10 +153,7 @@ def list_items(
     connection: DatabaseDep,
     settings: SettingsDep,
     now: NowDep,
-    category: Annotated[str | None, Query(min_length=1, max_length=50)] = None,
-    priority: Annotated[Priority | None, Query()] = None,
-    recurring: Annotated[bool | None, Query()] = None,
-    q: Annotated[str | None, Query(max_length=200)] = None,
+    filters: ItemFiltersDep,
 ) -> ItemListResponse:
     tz = _zone(settings)
     reference_local_date = utc_to_local_date(now, tz)
@@ -196,17 +164,15 @@ def list_items(
         Bucket.LATER: [],
     }
 
-    category_filter = category.strip() if category is not None else None
-    search = q.strip() if q is not None else None
     records = list_active_items(
         connection,
-        category=category_filter or None,
-        priority=priority,
-        recurring=recurring,
-        q=search or None,
+        category=filters.category,
+        priority=filters.priority,
+        recurring=filters.recurring,
+        q=filters.q,
     )
     for record in records:
-        item = _record_to_due_item(record, tz)
+        item = record_to_due_item(record, tz)
         bucket = classify_bucket(
             due_at_utc=item.due_at_utc,
             due_local_date=item.due_local_date,
@@ -260,7 +226,7 @@ def create_item(
     )
     record = insert_item(connection, values)
     response.headers["Location"] = f"/api/items/{record.id}"
-    return _record_to_due_item(record, tz)
+    return record_to_due_item(record, tz)
 
 
 def _snapshot_json(record: ItemRecord, *, next_due_at_utc: datetime | None) -> str:
@@ -326,7 +292,7 @@ def complete_item(
                 datetime.combine(next_local.local_date, next_local.local_time), tz
             )
 
-    previous_state = _record_to_due_item(record, tz)
+    previous_state = record_to_due_item(record, tz)
     snapshot_json = _snapshot_json(record, next_due_at_utc=next_due_at_utc)
 
     updated_fields: dict[str, Any] = {"updated_at_utc": now}
@@ -370,7 +336,7 @@ def complete_item(
                 and advanced.status != "deleted"
             ),
         ),
-        item=_record_to_due_item(advanced, tz) if next_due_at_utc is not None else None,
+        item=record_to_due_item(advanced, tz) if next_due_at_utc is not None else None,
     )
 
 
@@ -562,7 +528,7 @@ def patch_item(
     updated = update_item(connection, item_id, values)
     if updated is None:
         raise _not_found(item_id)
-    return _record_to_due_item(updated, tz)
+    return record_to_due_item(updated, tz)
 
 
 @router.delete("/{item_id}", status_code=204)
