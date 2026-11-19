@@ -321,3 +321,146 @@ def test_items_persist_across_app_restart(client: TestClient, app_settings: Sett
         body = restarted.get("/api/items").json()
 
     assert item["title"] in _titles(body["buckets"]["due_today"])
+
+
+def test_scope_upcoming_omits_overdue_bucket_but_keeps_accurate_count(
+    client: TestClient,
+) -> None:
+    _create(client, title="Overdue one", due={"kind": "datetime", "at": "2026-11-05T11:00:00Z"})
+    _create(client, title="Overdue two", due={"kind": "datetime", "at": "2026-11-04T09:00:00Z"})
+    _create(client, title="Due now", due={"kind": "datetime", "at": "2026-11-05T12:00:00Z"})
+    _create(client, title="Today date-only")
+    _create(client, title="Tomorrow", due={"kind": "date", "date": "2026-11-06"})
+    _create(client, title="Later", due={"kind": "date", "date": "2026-11-20"})
+
+    all_body = client.get("/api/items").json()
+    response = client.get("/api/items", params={"scope": "upcoming"})
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert _titles(all_body["buckets"]["overdue"]) == ["Overdue two", "Overdue one"]
+    assert body["buckets"]["overdue"] == []
+    assert body["summary"]["overdue_count"] == 2
+    assert body["summary"] == all_body["summary"]
+    for bucket in ("due_today", "upcoming", "later"):
+        assert body["buckets"][bucket] == all_body["buckets"][bucket]
+    assert _titles(body["buckets"]["due_today"]) == ["Due now", "Today date-only"]
+
+
+def test_scope_upcoming_treats_due_now_and_today_date_only_as_upcoming(
+    client: TestClient,
+) -> None:
+    _create(client, title="Due now", due={"kind": "datetime", "at": "2026-11-05T12:00:00Z"})
+    _create(client, title="Today date-only")
+
+    body = client.get("/api/items", params={"scope": "upcoming"}).json()
+
+    assert body["summary"]["overdue_count"] == 0
+    assert body["buckets"]["overdue"] == []
+    assert set(_titles(body["buckets"]["due_today"])) == {"Due now", "Today date-only"}
+
+
+def test_scope_upcoming_combines_with_filters_and_counts_the_filtered_overdue_set(
+    client: TestClient,
+) -> None:
+    _create(
+        client,
+        title="Overdue bill",
+        due={"kind": "datetime", "at": "2026-11-05T11:00:00Z"},
+        category="Bills",
+        priority="high",
+    )
+    _create(
+        client,
+        title="Overdue health",
+        due={"kind": "datetime", "at": "2026-11-05T11:00:00Z"},
+        category="Health",
+        priority="high",
+    )
+    _create(
+        client,
+        title="Upcoming bill",
+        due={"kind": "date", "date": "2026-11-06"},
+        category="Bills",
+        priority="high",
+    )
+    _create(
+        client,
+        title="Upcoming health",
+        due={"kind": "date", "date": "2026-11-06"},
+        category="Health",
+        priority="high",
+    )
+
+    body = client.get(
+        "/api/items",
+        params={"scope": "upcoming", "category": "Bills", "priority": "high"},
+    ).json()
+
+    assert body["buckets"]["overdue"] == []
+    assert body["summary"]["overdue_count"] == 1
+    assert _titles(body["buckets"]["upcoming"]) == ["Upcoming bill"]
+    assert body["summary"]["upcoming_total_cents"] == 0
+
+
+def test_scope_upcoming_excludes_completed_and_deleted_overdue_items(
+    client: TestClient,
+) -> None:
+    completed = _create(
+        client,
+        title="Completed overdue",
+        due={"kind": "datetime", "at": "2026-11-05T11:00:00Z"},
+    )
+    deleted = _create(
+        client,
+        title="Deleted overdue",
+        due={"kind": "datetime", "at": "2026-11-05T11:00:00Z"},
+    )
+
+    assert client.post(f"/api/items/{completed['id']}/complete").status_code == 200
+    assert client.delete(f"/api/items/{deleted['id']}").status_code == 204
+
+    body = client.get("/api/items", params={"scope": "upcoming"}).json()
+
+    assert body["buckets"]["overdue"] == []
+    assert body["summary"] == {
+        "overdue_count": 0,
+        "due_today_count": 0,
+        "upcoming_total_cents": 0,
+    }
+    assert all(not bucket for bucket in body["buckets"].values())
+
+
+def test_scope_upcoming_empty_result_returns_zero_counts(client: TestClient) -> None:
+    body = client.get("/api/items", params={"scope": "upcoming"}).json()
+
+    assert body["buckets"] == {"overdue": [], "due_today": [], "upcoming": [], "later": []}
+    assert body["summary"] == {
+        "overdue_count": 0,
+        "due_today_count": 0,
+        "upcoming_total_cents": 0,
+    }
+
+
+def test_scope_upcoming_respects_the_application_timezone_boundary(client: TestClient) -> None:
+    _create(
+        client,
+        title="Local yesterday date-only",
+        due={"kind": "date", "date": "2026-11-04"},
+    )
+    _create(
+        client,
+        title="Local today date-only",
+        due={"kind": "date", "date": "2026-11-05"},
+    )
+    _create(
+        client,
+        title="One second before now",
+        due={"kind": "datetime", "at": "2026-11-05T11:59:59Z"},
+    )
+
+    body = client.get("/api/items", params={"scope": "upcoming"}).json()
+
+    assert body["buckets"]["overdue"] == []
+    assert body["summary"]["overdue_count"] == 2
+    assert _titles(body["buckets"]["due_today"]) == ["Local today date-only"]

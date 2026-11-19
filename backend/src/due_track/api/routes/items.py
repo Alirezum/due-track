@@ -184,11 +184,14 @@ def list_items(
     for bucket, bucket_items in grouped.items():
         grouped[bucket] = sort_items(bucket_items)
 
+    overdue_count = len(grouped[Bucket.OVERDUE])
     summary = summarize_buckets(
-        overdue_count=len(grouped[Bucket.OVERDUE]),
+        overdue_count=overdue_count,
         due_today_count=len(grouped[Bucket.DUE_TODAY]),
         upcoming_amounts=[item.amount_cents for item in grouped[Bucket.UPCOMING]],
     )
+    if filters.scope == "upcoming":
+        grouped[Bucket.OVERDUE] = []
     return ItemListResponse(
         buckets=Buckets(
             overdue=grouped[Bucket.OVERDUE],
