@@ -59,7 +59,7 @@
 - [X] T019 Implement `backend/src/due_track/api/app.py` with a FastAPI app factory, `/api` router mounting, startup migration application, and the handlers from `backend/src/due_track/api/errors.py`.
 - [X] T020 Create `backend/tests/conftest.py` with an isolated temporary SQLite database fixture, migrated schema, fixed-clock fixture, settings override, and FastAPI `TestClient` fixture.
 - [X] T021 [P] Create `frontend/src/api/types.ts` and `frontend/src/api/client.ts` mirroring `contracts/openapi.yaml`, including DueItem, DueInput, ItemCreate, ItemUpdate, ItemListResponse, CompletionLog, CompleteResponse, UndoResponse, HistoryResponse, and a typed fetch wrapper that surfaces `{detail}` errors.
-- [ ] T022 [P] Implement `frontend/src/components/AppShell.tsx` with navigation to Dashboard and History, a theme toggle, and accessible focus-visible styles.
+- [X] T022 [P] Implement `frontend/src/components/AppShell.tsx` with navigation to Dashboard and History, a theme toggle, and accessible focus-visible styles.
 - [ ] T023 [P] Implement `frontend/src/lib/format.ts` with `Intl.DateTimeFormat` local date/time formatting for timed and date-only items and `Intl.NumberFormat` currency formatting from integer cents and the API `currency_code`.
 
 **Checkpoint**: Foundation ready. User stories can begin.
