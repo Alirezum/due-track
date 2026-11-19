@@ -96,7 +96,7 @@
 - [X] T038 [P] [US1] Implement `frontend/src/components/ConfirmDialog.tsx` using the shadcn AlertDialog primitive with explicit confirm/cancel actions, keyboard trapping, and visible focus.
 - [X] T039 [US1] Implement `frontend/src/pages/DashboardPage.tsx` to render the four buckets and summary from `GET /api/items`, open the create/edit form, and require confirmation before delete.
 - [X] T040 [US1] Wire the dashboard route in `frontend/src/App.tsx` and verify `npm run build` in `frontend/`.
-- [ ] T041 [US1] Run the US1 quality gates from `specs/001-due-track-v1/plan.md`: `uv run pytest`, `uv run ruff check .`, `uv run ruff format --check .`, and `uv run mypy src` in `backend/`, plus `npm run test:run` and `npm run build` in `frontend/`.
+- [X] T041 [US1] Run the US1 quality gates from `specs/001-due-track-v1/plan.md`: `uv run pytest`, `uv run ruff check .`, `uv run ruff format --check .`, and `uv run mypy src` in `backend/`, plus `npm run test:run` and `npm run build` in `frontend/`.
 
 **Checkpoint**: User Story 1 is fully functional and testable independently. This is the MVP.
 
