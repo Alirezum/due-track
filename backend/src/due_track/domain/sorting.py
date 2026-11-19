@@ -13,9 +13,14 @@ PRIORITY_RANK = {
 
 
 class SortableItem(Protocol):
-    due_at_utc: datetime
-    priority: str
-    title: str
+    @property
+    def due_at_utc(self) -> datetime: ...
+
+    @property
+    def priority(self) -> str: ...
+
+    @property
+    def title(self) -> str: ...
 
 
 def sort_key(item: SortableItem) -> tuple[datetime, int, str]:
@@ -27,5 +32,5 @@ def sort_key(item: SortableItem) -> tuple[datetime, int, str]:
     )
 
 
-def sort_items(items: Iterable[SortableItem]) -> list[SortableItem]:
+def sort_items[ItemT: SortableItem](items: Iterable[ItemT]) -> list[ItemT]:
     return sorted(items, key=sort_key)
