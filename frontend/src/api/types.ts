@@ -18,6 +18,8 @@ export type AnchorMode = 'schedule' | 'completion'
 
 export type ItemStatus = 'active' | 'completed' | 'deleted'
 
+export type ItemScope = 'upcoming' | 'all'
+
 export interface DateOnlyDueInput {
   kind: 'date'
   date: ISODate
@@ -142,6 +144,7 @@ export interface TimelineResponse {
   reference_time_utc: ISODateTime
   timezone: string
   currency_code: string
+  overdue_count: number
   entries: TimelineEntry[]
 }
 
