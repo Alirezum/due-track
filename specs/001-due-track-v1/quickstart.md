@@ -189,6 +189,28 @@ Use a fresh database (`DUE_TRACK_DB_PATH=/tmp/due-track-check.sqlite3`) and a fi
    - Soft-delete a recurring item. It disappears from active views, future occurrences stop, and its
      prior history remains readable.
 
+## Validation Results (2026-11-05)
+
+A fresh-database validation run exercised the scenarios above through the API with a fixed
+`DUE_TRACK_TIMEZONE=America/New_York`. **29/29 scripted checks passed.**
+
+| Checkpoint | Result | Evidence |
+|------------|--------|----------|
+| Create and classify | PASS | Earlier-today, later-today, exactly-now, date-only-today, tomorrow, +7, and +8 boundaries; every item in exactly one bucket; due/priority/title ordering checked. |
+| Summary and filters | PASS | Upcoming total excluded missing amounts; category (case-insensitive), priority, recurring/one-time, and combined search filters all reflected in buckets and summary. |
+| Complete a one-time item | PASS | Response `item` was `null`; item left the dashboard; history retained the snapshot, scheduled due, and completion instant. |
+| Complete a recurring item | PASS | Jan 31 → Feb 28 → Mar 31; late daily advanced to the first occurrence after completion; completion-anchored weekly advanced from completion; inclusive end date was created then ended the series; remaining count 1 ended the series. |
+| Undo | PASS | Immediate undo restored the prior due date without duplicates; a touched occurrence was preserved and the snapshot returned as a separate item with a warning; an older completion was inspectable with `can_undo=false` and undo returned 409. |
+| History deletion | PASS | Only the selected entry disappeared; active items were unchanged. Dialog cancellation is covered by `frontend/tests/history.test.tsx`. |
+| Categories | PASS | Labels were trimmed, filtered case-insensitively, and cleared through an item edit. Deterministic badge tones are covered by `frontend/tests/dashboard.test.tsx`. |
+| Keyboard and theme | PASS | `frontend/tests/shortcuts.test.tsx` passed all 9 keyboard checks, including focus, ARIA state, and typing suppression. Theme toggling and reload persistence were verified with a temporary jsdom remount test. |
+| Persistence | PASS | Items, completions, and history survived a stop/restart against the same database. A soft-deleted recurring item stopped future occurrences while its history remained readable. |
+| Quick-add timing | PASS | 25 create round-trips averaged 6.22 ms (max 14.15 ms), well under the 30-second target; the `N` → focused title → submit UI path is covered by the keyboard tests. |
+
+No browser E2E runner is installed, so browser-only interactions were validated with
+Testing Library/jsdom assertions and the scripted API checks above. The same scenarios remain
+reproducible manually against `DUE_TRACK_DB_PATH=/tmp/due-track-check.sqlite3`.
+
 ## OpenAPI Contract
 
 The authoritative contract is [`contracts/openapi.yaml`](./contracts/openapi.yaml). It documents:

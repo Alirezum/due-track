@@ -213,7 +213,7 @@
 - [X] T082 [P] Update `README.md` and `CHANGELOG.md` with setup/run/quality commands and document the free-text category-label model, the two-table schema, and the `api/time.py` boundary-only timezone rule.
 - [X] T083 [P] Review `backend/src/due_track` and `frontend/src` for loopback binding, no telemetry/external requests, plain-text notes rendering, parameterized SQL, no timezone conversion outside `api/time.py`, and no secrets; record any caveat in `specs/001-due-track-v1/quickstart.md`.
 - [X] T084 Run the full quality gate from `specs/001-due-track-v1/plan.md`: backend pytest, ruff check, ruff format --check, mypy, frontend `test:run`, and frontend build.
-- [ ] T085 Execute the manual validation scenarios in `specs/001-due-track-v1/quickstart.md` and confirm all checkpoints, including category-label changes, boundary-only timezone behavior, and a timed quick-add under 30 seconds.
+- [X] T085 Execute the manual validation scenarios in `specs/001-due-track-v1/quickstart.md` and confirm all checkpoints, including category-label changes, boundary-only timezone behavior, and a timed quick-add under 30 seconds.
 
 ---
 
