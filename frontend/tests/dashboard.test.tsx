@@ -5,6 +5,8 @@ import type { ReactNode } from 'react'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DueItem, ItemListResponse } from '@/api/types'
+import App from '@/App'
+import { ThemeProvider } from '@/components/ThemeProvider'
 import { categoryBadgeTone } from '@/lib/categories'
 import { DashboardPage } from '@/pages/DashboardPage'
 
@@ -117,6 +119,22 @@ function renderDashboard() {
   return render(<DashboardPage />, { wrapper: Wrapper })
 }
 
+function renderApp(initialEntries: string[] = ['/']) {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+  })
+
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <ThemeProvider>
+        <MemoryRouter initialEntries={initialEntries}>
+          <App />
+        </MemoryRouter>
+      </ThemeProvider>
+    </QueryClientProvider>,
+  )
+}
+
 type Handler = (url: string, init: RequestInit) => Response | Promise<Response>
 
 function mockFetch(handler?: Handler) {
@@ -210,6 +228,272 @@ describe('DashboardPage', () => {
     await waitFor(() =>
       expect(screen.queryByText('Call the plumber')).not.toBeInTheDocument(),
     )
+  })
+
+  it('keeps edit, complete, and delete working for revealed overdue deadlines', async () => {
+    const user = userEvent.setup()
+    const overdueOne = makeItem({
+      id: 21,
+      title: 'Overdue one',
+      amount_cents: 120000,
+      due_at_utc: '2026-11-04T14:00:00Z',
+      due_local_date: '2026-11-04',
+      is_date_only: true,
+      due_local_time: null,
+    })
+    const overdueTwo = makeItem({
+      id: 22,
+      title: 'Overdue two',
+      due_at_utc: '2026-11-04T15:00:00Z',
+      due_local_date: '2026-11-04',
+      is_date_only: true,
+      due_local_time: null,
+    })
+    const overdueThree = makeItem({
+      id: 23,
+      title: 'Overdue three',
+      due_at_utc: '2026-11-04T16:00:00Z',
+      due_local_date: '2026-11-04',
+      is_date_only: true,
+      due_local_time: null,
+    })
+    const upcomingItem = makeItem({
+      id: 24,
+      title: 'Upcoming item',
+      due_at_utc: '2026-11-08T14:00:00Z',
+      due_local_date: '2026-11-08',
+      is_date_only: true,
+      due_local_time: null,
+    })
+    let overdue = [overdueOne, overdueTwo, overdueThree]
+    let upcoming = [upcomingItem]
+
+    function listBody(scope: 'all' | 'upcoming'): ItemListResponse {
+      return {
+        buckets: {
+          overdue: scope === 'all' ? overdue : [],
+          due_today: [],
+          upcoming,
+          later: [],
+        },
+        summary: {
+          overdue_count: overdue.length,
+          due_today_count: 0,
+          upcoming_total_cents: 0,
+        },
+        currency_code: 'USD',
+        timezone: 'America/New_York',
+      }
+    }
+
+    const fetchMock = mockFetch((url, init) => {
+      const method = init.method ?? 'GET'
+      if (url === '/api/items/21' && method === 'PATCH') {
+        const payload = JSON.parse(String(init.body)) as { amount_cents: number }
+        expect(payload.amount_cents).toBe(120000)
+        const moved = makeItem({
+          ...overdueOne,
+          due_at_utc: '2026-12-01T14:00:00Z',
+          due_local_date: '2026-12-01',
+        })
+        overdue = overdue.filter((item) => item.id !== 21)
+        upcoming = [...upcoming, moved]
+        return jsonResponse(moved)
+      }
+      if (url === '/api/items/22/complete' && method === 'POST') {
+        overdue = overdue.filter((item) => item.id !== 22)
+        return jsonResponse({ log: { id: 99 }, item: null })
+      }
+      if (url === '/api/items/23' && method === 'DELETE') {
+        overdue = overdue.filter((item) => item.id !== 23)
+        return new Response(null, { status: 204 })
+      }
+      if (url.startsWith('/api/items')) {
+        return jsonResponse(listBody(url.includes('scope=upcoming') ? 'upcoming' : 'all'))
+      }
+      return jsonResponse({ detail: 'not found' }, 404)
+    })
+    renderDashboard()
+    await screen.findByText('Upcoming item')
+
+    await user.click(screen.getByRole('button', { name: 'Show 3 overdue deadlines' }))
+    expect(await screen.findByText('Overdue one')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Edit Overdue one' }))
+    const editDialog = await screen.findByRole('dialog', { name: 'Edit deadline' })
+    expect(within(editDialog).getByLabelText('Amount')).toHaveValue('1200.00')
+    await user.clear(within(editDialog).getByLabelText('Date'))
+    await user.type(within(editDialog).getByLabelText('Date'), '2026-12-01')
+    await user.click(within(editDialog).getByRole('button', { name: 'Save changes' }))
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/items/21',
+        expect.objectContaining({ method: 'PATCH' }),
+      ),
+    )
+    const upcomingRegion = await screen.findByRole('region', { name: 'Upcoming' })
+    expect(within(upcomingRegion).getByRole('article', { name: 'Overdue one' })).toBeInTheDocument()
+    const overdueRegion = screen
+      .getByRole('heading', { name: 'Overdue' })
+      .closest('section') as HTMLElement
+    expect(
+      within(overdueRegion).queryByRole('article', { name: 'Overdue one' }),
+    ).not.toBeInTheDocument()
+    expect(summaryValue('Overdue')).toBe('2')
+
+    await user.click(screen.getByRole('button', { name: 'Complete Overdue two' }))
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/items/22/complete',
+        expect.objectContaining({ method: 'POST' }),
+      ),
+    )
+    expect(await screen.findByText('Completed Overdue two.')).toBeInTheDocument()
+    await waitFor(() =>
+      expect(screen.queryByRole('article', { name: 'Overdue two' })).not.toBeInTheDocument(),
+    )
+    expect(summaryValue('Overdue')).toBe('1')
+
+    await user.click(screen.getByRole('button', { name: 'Delete Overdue three' }))
+    const confirm = await screen.findByRole('alertdialog', { name: 'Delete deadline?' })
+    await user.click(within(confirm).getByRole('button', { name: 'Delete deadline' }))
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/items/23',
+        expect.objectContaining({ method: 'DELETE' }),
+      ),
+    )
+    expect(await screen.findByText('Deleted Overdue three.')).toBeInTheDocument()
+    expect(summaryValue('Overdue')).toBe('0')
+    expect(screen.getAllByText('Nothing overdue').length).toBeGreaterThan(0)
+  })
+
+  it('records a revealed overdue completion in History, restores it with undo, and resets the reveal on navigation', async () => {
+    const user = userEvent.setup()
+    const overdue = makeItem({
+      id: 31,
+      title: 'Tax return',
+      amount_cents: 120000,
+      due_at_utc: '2026-11-01T14:00:00Z',
+      due_local_date: '2026-11-01',
+      is_date_only: true,
+      due_local_time: null,
+    })
+    const upcoming = makeItem({
+      id: 32,
+      title: 'Call the plumber',
+      due_at_utc: '2026-11-08T14:00:00Z',
+      due_local_date: '2026-11-08',
+      is_date_only: true,
+      due_local_time: null,
+    })
+    const historyEntry = {
+      id: 77,
+      item_id: overdue.id,
+      scheduled_due_at_utc: overdue.due_at_utc,
+      completed_at_utc: '2026-11-05T12:00:00Z',
+      previous_state: overdue,
+      spawned_next_occurrence: false,
+      next_due_at_utc: null,
+      can_undo: true,
+    }
+    let completed = false
+    let undone = false
+
+    mockFetch((url, init) => {
+      const method = init.method ?? 'GET'
+      if (url === '/api/items/31/complete' && method === 'POST') {
+        completed = true
+        return jsonResponse({ log: historyEntry, item: null })
+      }
+      if (url === '/api/history/77/undo' && method === 'POST') {
+        undone = true
+        completed = false
+        return jsonResponse({
+          restored_item: overdue,
+          preserved_touched_occurrence: false,
+          warning: null,
+        })
+      }
+      if (url.startsWith('/api/history')) {
+        const visible = completed && !undone
+        return jsonResponse({ entries: visible ? [historyEntry] : [], total: visible ? 1 : 0 })
+      }
+      if (url.startsWith('/api/items')) {
+        const activeOverdue = completed && !undone ? [] : [overdue]
+        return jsonResponse({
+          buckets: {
+            overdue: url.includes('scope=upcoming') ? [] : activeOverdue,
+            due_today: [],
+            upcoming: [upcoming],
+            later: [],
+          },
+          summary: {
+            overdue_count: activeOverdue.length,
+            due_today_count: 0,
+            upcoming_total_cents: 0,
+          },
+          currency_code: 'USD',
+          timezone: 'America/New_York',
+        } satisfies ItemListResponse)
+      }
+      return jsonResponse({ detail: 'not found' }, 404)
+    })
+    renderApp()
+    await screen.findByText('Call the plumber')
+    await user.click(screen.getByRole('button', { name: 'Show 1 overdue deadline' }))
+    expect(await screen.findByText('Tax return')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('link', { name: 'History' }))
+    expect(await screen.findByText('No completions yet.')).toBeInTheDocument()
+    await user.click(screen.getByRole('link', { name: 'Deadlines' }))
+    await screen.findByText('Call the plumber')
+    expect(screen.queryByText('Tax return')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Show 1 overdue deadline' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Show 1 overdue deadline' }))
+    await user.click(await screen.findByRole('button', { name: 'Complete Tax return' }))
+    await waitFor(() => expect(screen.queryByText('Tax return')).not.toBeInTheDocument())
+    expect(screen.getAllByText('Nothing overdue').length).toBeGreaterThan(0)
+
+    await user.click(screen.getByRole('link', { name: 'History' }))
+    const list = await screen.findByRole('list', { name: 'Completion history' })
+    expect(within(list).getByRole('heading', { name: 'Tax return' })).toBeInTheDocument()
+    await user.click(
+      within(list).getByRole('button', { name: 'Undo completion of Tax return' }),
+    )
+
+    expect(await screen.findByText('No completions yet.')).toBeInTheDocument()
+    await user.click(screen.getByRole('link', { name: 'Deadlines' }))
+    await screen.findByText('Call the plumber')
+    expect(screen.getByRole('button', { name: 'Show 1 overdue deadline' })).toBeInTheDocument()
+    expect(screen.queryByText('Tax return')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Show 1 overdue deadline' }))
+    expect(await screen.findByText('Tax return')).toBeInTheDocument()
+  })
+
+  it('operates the overdue indicator from the keyboard and announces state changes', async () => {
+    const user = userEvent.setup()
+    renderDashboard()
+    await screen.findByText('Call the plumber')
+
+    const show = screen.getByRole('button', { name: 'Show 1 overdue deadline' })
+    show.focus()
+    expect(show).toHaveFocus()
+    await user.keyboard('{Enter}')
+
+    const card = await screen.findByRole('article', { name: 'Tax return' })
+    await waitFor(() => expect(card).toHaveFocus())
+    expect(screen.getByRole('region', { name: 'Deadlines including overdue' })).toBeInTheDocument()
+    expect(screen.getByText('Showing 1 overdue deadline.')).toBeInTheDocument()
+
+    const hide = screen.getByRole('button', { name: 'Hide 1 overdue deadline' })
+    hide.focus()
+    await user.keyboard(' ')
+    await waitFor(() => expect(hide).toHaveFocus())
+    expect(screen.getByRole('region', { name: 'Upcoming deadlines' })).toBeInTheDocument()
+    expect(screen.getByText('Hiding overdue deadlines. Showing upcoming only.')).toBeInTheDocument()
   })
 
   it('reveals and hides overdue deadlines with a focus handoff', async () => {

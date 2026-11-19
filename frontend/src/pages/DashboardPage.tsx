@@ -165,13 +165,17 @@ export function DashboardPage() {
     if (first) {
       setActiveItemId(first.id)
       document.querySelector<HTMLElement>(`[data-item-id="${first.id}"]`)?.focus()
-      setAnnouncement('Showing overdue deadlines.')
+      setAnnouncement(
+        `Showing ${overdueCount} overdue ${overdueCount === 1 ? 'deadline' : 'deadlines'}.`,
+      )
     } else {
       document.getElementById(OVERDUE_REGION_ID)?.focus()
-      setAnnouncement('Showing overdue deadlines.')
+      setAnnouncement(
+        `Showing ${overdueCount} overdue ${overdueCount === 1 ? 'deadline' : 'deadlines'}.`,
+      )
     }
     setPendingRevealFocus(false)
-  }, [isPlaceholderData, pendingRevealFocus, showOverdue, visibleOverdue])
+  }, [isPlaceholderData, overdueCount, pendingRevealFocus, showOverdue, visibleOverdue])
 
   useEffect(() => {
     if (!pendingHideFocus || showOverdue) {
@@ -204,7 +208,7 @@ export function DashboardPage() {
     setActiveItemId(null)
     setPendingHideFocus(true)
     setShowOverdue(false)
-    setAnnouncement('Showing upcoming deadlines only.')
+    setAnnouncement('Hiding overdue deadlines. Showing upcoming only.')
   }
 
   async function noticeForSavedItem(saved: DueItem): Promise<HiddenItemNotice | null> {
@@ -265,6 +269,7 @@ export function DashboardPage() {
     setCompletingItemId(item.id)
     try {
       await completeItem.mutateAsync(item.id)
+      setAnnouncement(`Completed ${item.title}.`)
     } catch (error) {
       setPageError(describeError(error))
     } finally {
@@ -279,6 +284,7 @@ export function DashboardPage() {
     setPageError(null)
     try {
       await deleteItem.mutateAsync(deletingItem.id)
+      setAnnouncement(`Deleted ${deletingItem.title}.`)
       setDeletingItem(null)
     } catch (error) {
       setPageError(describeError(error))
