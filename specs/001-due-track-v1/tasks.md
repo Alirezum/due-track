@@ -138,7 +138,7 @@
 
 ### Tests for User Story 3 (required)
 
-- [ ] T054 [P] [US3] Write API filter tests in `backend/tests/integration/api/test_filters.py` for category (case-insensitive exact), priority, recurring true/false, `q` across title/notes (case-insensitive partial), AND combinations, clear-all, no matches, and summary consistency with filtered buckets.
+- [X] T054 [P] [US3] Write API filter tests in `backend/tests/integration/api/test_filters.py` for category (case-insensitive exact), priority, recurring true/false, `q` across title/notes (case-insensitive partial), AND combinations, clear-all, no matches, and summary consistency with filtered buckets.
 - [ ] T055 [P] [US3] Write frontend filter tests in `frontend/tests/filters.test.tsx` for each control, combined filters, live debounced search, clear-all, and the no-results message.
 
 ### Implementation for User Story 3
