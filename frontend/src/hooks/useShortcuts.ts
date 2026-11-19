@@ -26,8 +26,6 @@ const KEY_HANDLERS: Record<string, keyof ShortcutHandlers> = {
   '?': 'onShowHelp',
 }
 
-const PREVENT_DEFAULT_KEYS = new Set(['/', 'Enter', '?', 'Delete'])
-
 export type ShortcutOptions = {
   enabled?: boolean
 }
@@ -70,9 +68,7 @@ export function useShortcuts(handlers: ShortcutHandlers, { enabled = true }: Sho
         return
       }
 
-      if (PREVENT_DEFAULT_KEYS.has(key)) {
-        event.preventDefault()
-      }
+      event.preventDefault()
       handler()
     }
 

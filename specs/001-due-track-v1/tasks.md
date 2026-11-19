@@ -195,7 +195,7 @@
 - [X] T073 [US5] Implement `frontend/src/hooks/useShortcuts.ts` with global keydown handling, input-target suppression, preventDefault where needed, and active-item navigation callbacks.
 - [X] T074 [P] [US5] Implement `frontend/src/components/ShortcutHelp.tsx` using the shadcn Dialog primitive with a focus trap, Esc close, and all shortcuts listed.
 - [X] T075 [US5] Add visible focus rings, an active-item highlight, and ARIA labels to `frontend/src/components/ItemCard.tsx` and `frontend/src/components/AppShell.tsx`.
-- [ ] T076 [US5] Wire shortcuts in `frontend/src/pages/DashboardPage.tsx`: N opens ItemForm with title focus, `/` focuses search, J/K moves the active item, Enter opens details, C completes, E edits, Delete opens confirmation, `?` opens ShortcutHelp, and Esc closes overlays.
+- [X] T076 [US5] Wire shortcuts in `frontend/src/pages/DashboardPage.tsx`: N opens ItemForm with title focus, `/` focuses search, J/K moves the active item, Enter opens details, C completes, E edits, Delete opens confirmation, `?` opens ShortcutHelp, and Esc closes overlays.
 - [ ] T077 [US5] Run the US5 quality gates from `specs/001-due-track-v1/plan.md` and the shortcut tests in `frontend/tests/shortcuts.test.tsx`.
 
 **Checkpoint**: All five user stories work independently and together.

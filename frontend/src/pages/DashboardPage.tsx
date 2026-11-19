@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Plus } from 'lucide-react'
 import { ApiError } from '@/api/client'
 import type { DueItem, ItemCreate, ItemListResponse, ItemUpdate } from '@/api/types'
@@ -6,6 +6,7 @@ import { BucketSection } from '@/components/BucketSection'
 import { ConfirmDialog } from '@/components/ConfirmDialog'
 import { FilterBar } from '@/components/FilterBar'
 import { ItemForm } from '@/components/ItemForm'
+import { ShortcutHelp } from '@/components/ShortcutHelp'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -16,6 +17,7 @@ import {
 } from '@/components/ui/dialog'
 import { useCompleteItem } from '@/hooks/useCompleteItem'
 import { useCreateItem, useDeleteItem, useItems, useUpdateItem } from '@/hooks/useItems'
+import { useShortcuts } from '@/hooks/useShortcuts'
 import { EMPTY_FILTERS, hasActiveFilters, type ItemFilters } from '@/lib/filters'
 import { formatAmount } from '@/lib/format'
 
@@ -60,8 +62,35 @@ export function DashboardPage() {
   const [editingItem, setEditingItem] = useState<DueItem | null>(null)
   const [deletingItem, setDeletingItem] = useState<DueItem | null>(null)
   const [completingItemId, setCompletingItemId] = useState<number | null>(null)
+  const [activeItemId, setActiveItemId] = useState<number | null>(null)
+  const [helpOpen, setHelpOpen] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
   const [pageError, setPageError] = useState<string | null>(null)
+
+  const flatItems = useMemo(
+    () =>
+      data
+        ? [
+            ...data.buckets.overdue,
+            ...data.buckets.due_today,
+            ...data.buckets.upcoming,
+            ...data.buckets.later,
+          ]
+        : [],
+    [data],
+  )
+  const activeItem = useMemo(
+    () => flatItems.find((item) => item.id === activeItemId) ?? null,
+    [activeItemId, flatItems],
+  )
+
+  useEffect(() => {
+    if (activeItemId === null) {
+      return
+    }
+    const node = document.querySelector<HTMLElement>(`[data-item-id="${activeItemId}"]`)
+    node?.focus()
+  }, [activeItemId])
 
   function openCreate() {
     setFormError(null)
@@ -120,6 +149,59 @@ export function DashboardPage() {
       setPageError(describeError(error))
     }
   }
+
+  function moveActiveItem(direction: -1 | 1) {
+    if (flatItems.length === 0) {
+      return
+    }
+    setActiveItemId((current) => {
+      const index = current === null ? -1 : flatItems.findIndex((item) => item.id === current)
+      if (index === -1) {
+        return direction === 1 ? flatItems[0].id : flatItems[flatItems.length - 1].id
+      }
+      const nextIndex = Math.min(Math.max(index + direction, 0), flatItems.length - 1)
+      return flatItems[nextIndex].id
+    })
+  }
+
+  const overlayOpen = createOpen || editingItem !== null || deletingItem !== null || helpOpen
+
+  useShortcuts(
+    {
+      onNew: openCreate,
+      onFocusSearch: () => document.getElementById('filter-search')?.focus(),
+      onNextItem: () => moveActiveItem(1),
+      onPreviousItem: () => moveActiveItem(-1),
+      onOpenItem: () => {
+        if (activeItem) {
+          openEdit(activeItem)
+        }
+      },
+      onCompleteItem: () => {
+        if (activeItem) {
+          void handleComplete(activeItem)
+        }
+      },
+      onEditItem: () => {
+        if (activeItem) {
+          openEdit(activeItem)
+        }
+      },
+      onDeleteItem: () => {
+        if (activeItem) {
+          setDeletingItem(activeItem)
+        }
+      },
+      onShowHelp: () => setHelpOpen(true),
+      onEscape: () => {
+        setHelpOpen(false)
+        setCreateOpen(false)
+        setEditingItem(null)
+        setDeletingItem(null)
+      },
+    },
+    { enabled: !overlayOpen },
+  )
 
   if (isPending) {
     return (
@@ -203,6 +285,10 @@ export function DashboardPage() {
         </p>
       ) : null}
 
+      <p className="sr-only" aria-live="polite">
+        {activeItem ? `Active deadline: ${activeItem.title}` : ''}
+      </p>
+
       {filtersActive && visibleCount === 0 ? (
         <section
           aria-label="Filtered results"
@@ -232,6 +318,7 @@ export function DashboardPage() {
               onDelete={setDeletingItem}
               onComplete={(item) => void handleComplete(item)}
               completingItemId={completingItemId}
+              activeItemId={activeItemId}
             />
             <BucketSection
               id="due-today"
@@ -244,6 +331,7 @@ export function DashboardPage() {
               onDelete={setDeletingItem}
               onComplete={(item) => void handleComplete(item)}
               completingItemId={completingItemId}
+              activeItemId={activeItemId}
             />
           </div>
           <div className="grid content-start gap-10">
@@ -258,6 +346,7 @@ export function DashboardPage() {
               onDelete={setDeletingItem}
               onComplete={(item) => void handleComplete(item)}
               completingItemId={completingItemId}
+              activeItemId={activeItemId}
             />
             <BucketSection
               id="later"
@@ -270,6 +359,7 @@ export function DashboardPage() {
               onDelete={setDeletingItem}
               onComplete={(item) => void handleComplete(item)}
               completingItemId={completingItemId}
+              activeItemId={activeItemId}
             />
           </div>
         </div>
@@ -333,6 +423,8 @@ export function DashboardPage() {
         onConfirm={() => void handleDelete()}
         onOpenChange={(open) => (open ? null : setDeletingItem(null))}
       />
+
+      <ShortcutHelp open={helpOpen} onOpenChange={setHelpOpen} />
     </div>
   )
 }
