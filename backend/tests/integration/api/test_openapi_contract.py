@@ -105,6 +105,12 @@ def test_representative_responses_match_documented_schemas(client: TestClient) -
     assert listing.status_code == 200, listing.text
     _assert_schema(contract, "ItemListResponse", listing.json())
 
+    timeline = client.get("/api/timeline", params={"q": "Contract", "category": "Bills"})
+    assert timeline.status_code == 200, timeline.text
+    timeline_body = timeline.json()
+    _assert_schema(contract, "TimelineResponse", timeline_body)
+    assert [entry["item"]["id"] for entry in timeline_body["entries"]] == [created_body["id"]]
+
     completed = client.post(f"/api/items/{created_body['id']}/complete")
     assert completed.status_code == 200, completed.text
     completed_body = completed.json()

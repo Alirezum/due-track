@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: due-track API
-  version: 1.0.0
+  version: 1.1.0
   description: |
     Local-first, single-user deadline and obligation tracker.
 
@@ -13,6 +13,10 @@ info:
     Categories are free-text labels stored on each item. Badge colors are derived
     deterministically by the frontend; there is no categories table or category CRUD
     endpoint in this two-table model.
+
+    Version 1.1.0 is an additive MINOR amendment: it adds the read-only
+    `GET /api/timeline` projection with server-computed urgency and reference time.
+    No existing path, schema, or behavior changes.
   termsOfService: http://127.0.0.1:8000/
   contact:
     name: due-track
@@ -25,6 +29,8 @@ tags:
     description: Active item CRUD, dashboard grouping, filters, and completion.
   - name: History
     description: Completion audit trail, undo, and history deletion.
+  - name: Timeline
+    description: Read-only timeline projection of filtered active deadlines.
 
 paths:
   /api/items:
@@ -202,6 +208,123 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+
+  /api/timeline:
+    get:
+      tags: [Timeline]
+      operationId: getTimeline
+      summary: List filtered active deadlines in chronological order
+      description: |
+        Returns every `active` item matching the filters exactly once, sorted by due
+        instant ascending, then priority descending (`critical` > `high` > `medium` >
+        `low`), then title ascending (case-insensitively), with `id` as the final
+        stable tie-breaker.
+
+        Each entry carries a server-computed, time-based urgency band and a signed
+        `seconds_until_due`, both evaluated against `reference_time_utc`. Clients use
+        these values instead of reimplementing overdue or urgency thresholds.
+
+        Urgency boundaries:
+        - **overdue**: `due_at_utc < reference_time_utc`
+        - **due_now**: `due_at_utc == reference_time_utc`
+        - **within_24h**: `0 < due_at_utc - reference_time_utc <= 24 hours`
+        - **within_7d**: `24 hours < due_at_utc - reference_time_utc <= 7 days`
+        - **later**: more than 7 days remaining
+
+        Filters combine with AND semantics and match `GET /api/items` exactly.
+        Completed and deleted items never appear. An empty result returns `entries: []`.
+      parameters:
+        - name: category
+          in: query
+          required: false
+          description: Case-insensitive exact match on the item's free-text category label.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 50
+        - name: priority
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/Priority'
+        - name: recurring
+          in: query
+          required: false
+          description: |
+            `true` selects recurring items (`recurrence_freq != none`);
+            `false` selects one-time items (`recurrence_freq == none`).
+          schema:
+            type: boolean
+        - name: q
+          in: query
+          required: false
+          description: Case-insensitive substring search across title and notes.
+          schema:
+            type: string
+            maxLength: 200
+      responses:
+        '200':
+          description: Filtered active deadlines in chronological order.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TimelineResponse'
+              examples:
+                mixed:
+                  summary: Overdue, imminent, and later deadlines
+                  value:
+                    reference_time_utc: '2026-11-05T17:00:00Z'
+                    timezone: America/New_York
+                    currency_code: USD
+                    entries:
+                      - item:
+                          id: 4
+                          title: Electric bill
+                          notes: November invoice.
+                          due_at_utc: '2026-11-05T14:00:00Z'
+                          is_date_only: false
+                          due_local_date: '2026-11-05'
+                          due_local_time: '09:00'
+                          category: Bills
+                          priority: high
+                          amount_cents: 12000
+                          recurrence_freq: monthly
+                          recurrence_interval: 1
+                          recurrence_anchor_mode: schedule
+                          recurrence_anchor_day: 5
+                          recurrence_end_date: null
+                          recurrence_remaining_count: null
+                          status: active
+                          is_recurring: true
+                          created_at_utc: '2026-10-01T12:00:00Z'
+                          updated_at_utc: '2026-10-01T12:00:00Z'
+                        urgency: overdue
+                        seconds_until_due: -10800
+                      - item:
+                          id: 9
+                          title: Passport renewal
+                          notes: Allow six weeks.
+                          due_at_utc: '2026-12-20T04:59:59.999999Z'
+                          is_date_only: true
+                          due_local_date: '2026-12-19'
+                          due_local_time: null
+                          category: Travel
+                          priority: low
+                          amount_cents: null
+                          recurrence_freq: none
+                          recurrence_interval: 1
+                          recurrence_anchor_mode: schedule
+                          recurrence_anchor_day: null
+                          recurrence_end_date: null
+                          recurrence_remaining_count: null
+                          status: active
+                          is_recurring: false
+                          created_at_utc: '2026-11-01T12:00:00Z'
+                          updated_at_utc: '2026-11-01T12:00:00Z'
+                        urgency: later
+                        seconds_until_due: 3844799
+        '422':
+          $ref: '#/components/responses/ValidationError'
 
   /api/history:
     get:
@@ -765,6 +888,61 @@ components:
           type: integer
           minimum: 0
           description: Total completion logs matching the request (before pagination).
+
+    Urgency:
+      type: string
+      description: |
+        Time-based display band evaluated against `reference_time_utc`. Independent of
+        item priority. Exactly 24 hours remaining is `within_24h`; exactly 7 days is
+        `within_7d`. Equality with the reference time is `due_now`, never `overdue`.
+      enum: [overdue, due_now, within_24h, within_7d, later]
+
+    TimelineEntry:
+      type: object
+      additionalProperties: false
+      required: [item, urgency, seconds_until_due]
+      properties:
+        item:
+          $ref: '#/components/schemas/DueItem'
+        urgency:
+          $ref: '#/components/schemas/Urgency'
+        seconds_until_due:
+          type: integer
+          format: int64
+          description: |
+            Signed seconds from `reference_time_utc` to the item's due instant:
+            `floor((due_at_utc - reference_time_utc).total_seconds())`.
+            Positive values are remaining, zero is due now, and negative values are
+            elapsed. Flooring keeps remaining time from being overstated and overdue
+            time from being understated.
+
+    TimelineResponse:
+      type: object
+      additionalProperties: false
+      required: [reference_time_utc, timezone, currency_code, entries]
+      properties:
+        reference_time_utc:
+          type: string
+          format: date-time
+          description: |
+            The server's authoritative current instant, including any test clock
+            override. Used for the now line, positioning, urgency, and countdown
+            anchoring. Never derived from the browser clock.
+        timezone:
+          type: string
+          description: IANA timezone name used for local due dates, axis labels, and day boundaries.
+          example: America/New_York
+        currency_code:
+          type: string
+          pattern: '^[A-Z]{3}$'
+          description: ISO 4217 code used to format amounts in the detail view. No conversion.
+        entries:
+          type: array
+          description: |
+            Every filtered active deadline exactly once, in chronological order. Empty
+            when no active deadline matches the filters.
+          items:
+            $ref: '#/components/schemas/TimelineEntry'
 
     ValidationErrorItem:
       type: object

@@ -5,6 +5,8 @@ from typing import Annotated, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from due_track.domain.timeline import Urgency
+
 Priority = Literal["low", "medium", "high", "critical"]
 RecurrenceFrequency = Literal[
     "none",
@@ -222,6 +224,19 @@ class DueItem(StrictModel):
     is_recurring: bool
     created_at_utc: datetime
     updated_at_utc: datetime
+
+
+class TimelineEntry(StrictModel):
+    item: DueItem
+    urgency: Urgency
+    seconds_until_due: int
+
+
+class TimelineResponse(StrictModel):
+    reference_time_utc: datetime
+    timezone: str
+    currency_code: str
+    entries: list[TimelineEntry]
 
 
 class DashboardSummary(StrictModel):

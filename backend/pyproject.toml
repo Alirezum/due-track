@@ -37,3 +37,7 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 python_version = "3.12"
 strict = true
 files = ["src/due_track"]
+
+[tool.pytest.ini_options]
+consider_namespace_packages = true
+pythonpath = ["."]

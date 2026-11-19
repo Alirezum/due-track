@@ -8,6 +8,7 @@ from typing import Any
 from fastapi.testclient import TestClient
 
 from due_track.db.connection import connect
+from tests.integration.api.timeline_fixtures import seed_timeline_items
 
 SEEDED_ITEMS = 1_000
 MAX_SECONDS = 1.0
@@ -72,3 +73,36 @@ def test_filtered_list_with_thousand_items_stays_under_one_second(
     total = sum(len(items) for items in body["buckets"].values())
     assert total == SEEDED_ITEMS
     assert elapsed < MAX_SECONDS, f"filtered list took {elapsed:.3f}s for {SEEDED_ITEMS} items"
+
+
+def test_timeline_1000_items_under_one_second(client: TestClient, migrated_database: Path) -> None:
+    connection = connect(migrated_database)
+    try:
+        seed_timeline_items(
+            connection,
+            SEEDED_ITEMS,
+            category="Bench",
+            priority="medium",
+            recurrence_freq="none",
+            title_prefix="Benchmark item",
+        )
+    finally:
+        connection.close()
+
+    started = time.perf_counter()
+    response = client.get(
+        "/api/timeline",
+        params={
+            "category": "bench",
+            "priority": "medium",
+            "recurring": "false",
+            "q": "Benchmark",
+        },
+    )
+    elapsed = time.perf_counter() - started
+
+    assert response.status_code == 200, response.text
+    entries = response.json()["entries"]
+    assert len(entries) == SEEDED_ITEMS
+    assert len({entry["item"]["id"] for entry in entries}) == SEEDED_ITEMS
+    assert elapsed < MAX_SECONDS, f"timeline took {elapsed:.3f}s for {SEEDED_ITEMS} items"
